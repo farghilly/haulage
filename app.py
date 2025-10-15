@@ -201,7 +201,7 @@ if filtered_df.empty:
     st.warning("No data available based on the selected filters.")
 else:
     # --- Row 1: Dead Head Distance Over Time ---
-    st.subheader("1. Dead Head Distance Over Time")
+    st.subheader("Dead Head Distance Over Time")
     
     # Calculate daily total dead head distance
     df_dead_head_distance = filtered_df.groupby(
@@ -225,7 +225,7 @@ else:
 
     # --- Chart 2: Average Jumbo Shipments ---
     with col1:
-        st.subheader("2. Average Jumbo Shipments per Vehicle")
+        st.subheader("Average Jumbo Shipments per Vehicle")
         
         # Apply Jumbo-specific filters based on the original notebook logic
         df_jumbo = filtered_df[
@@ -255,7 +255,7 @@ else:
 
     # --- Chart 3: Dead Head Percentage by Transporter ---
     with col2:
-        st.subheader("3. Dead Head Percentage by Transporter")
+        st.subheader("Dead Head Percentage by Transporter")
 
         # Now safe to use 'shipped_distance' and 'dead_head_distance'
         df_analysis = filtered_df.groupby('transporter_name').agg(
