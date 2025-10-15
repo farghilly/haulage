@@ -2,39 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-# import psycopg2 # Keep for deployment to environment that supports it
 from psycopg2.extras import RealDictCursor
 from psycopg2 import sql
 from datetime import datetime
 import os
 import time
 
-# NOTE: Mocking psycopg2 connect and read_sql_query for local testing environment.
-# In a real deployment (like Render), the try/except block will use the actual DB connection.
 
-try:
-    import psycopg2
-except ImportError:
-    class MockConnection:
-        def close(self): pass
-    
-    class MockPsycopg2:
-        def connect(self, **kwargs):
-            # Simulate a successful connection
-            time.sleep(0.1) 
-            return MockConnection()
-        
-        def read_sql(self, query, conn):
-            # This is where you would put the logic to generate mock data if needed for testing
-            # For now, we rely on the function's internal mock logic if DB_HOST is 'placeholder_host'
-            pass
-
-        def sql(self, *args, **kwargs):
-            return "MOCK SQL"
-
-    psycopg2 = MockPsycopg2()
-    # Mocking read_sql_query which is used by pandas
-    pd.read_sql_query = pd.read_sql
 
 
 # --- Configuration ---
@@ -46,8 +20,7 @@ st.set_page_config(
 
 # --- Data Loading and Preparation (Secure and Deployment Ready) ---
 
-# Mock Database Credentials (Read securely from environment variables)
-# IMPORTANT: You must set these variables on your hosting platform (e.g., Render)
+# Database Credentials (Read securely from environment variables)
 # FIX: Added .strip().strip("'").strip('"') to safely remove leading/trailing spaces or accidental quotes
 DB_HOST = os.environ.get('DB_HOST', 'placeholder_host').strip().strip("'").strip('"')
 DB_NAME = os.environ.get('DB_NAME', 'placeholder_db').strip().strip("'").strip('"')
@@ -61,44 +34,7 @@ def load_and_process_data():
     Connects to the database, fetches all required data, and performs initial calculations
     like identifying shipped distance and dead head distance.
     """
-    
-    # --- SIMULATION/MOCK DATA GENERATION ---
-    if DB_HOST == 'placeholder_host':
-        st.warning("Using mock data. Set environment variables (DB_HOST, DB_NAME, etc.) for live DB connection.")
-        # Generate comprehensive mock data to ensure all dashboard elements function
-        data = {
-            'shipment': [f'S{i}' for i in range(100)],
-            'transporter_name': np.random.choice(['Alpha Logistics', 'Beta Haulage', 'Gamma Express', 'Al -Rehab Office for Transport and', 'Alwefaq national transport'], 100),
-            'transporter_type_description': np.random.choice(['dedicated', 'spot'], 100, p=[0.6, 0.4]),
-            'actual_shipment_start': pd.to_datetime(pd.date_range('2024-06-01', periods=100, freq='10h')),
-            'shipping_point': np.random.choice(['Alexandria Port', 'Cairo Hub', 'Suez DC', 'Qalyub'], 100),
-            'receiving_point': np.random.choice(['Aswan Terminal', 'Luxor Warehouse', 'Cairo Hub', 'Suez DC', 'Alexandria Port', 'Qalyub'], 100),
-            'vehicle_id': np.random.randint(1000, 1050, 100),
-            'distance': np.random.randint(50, 800, 100) # Mock actual shipment distance
-        }
-        df_shipments = pd.DataFrame(data)
-        
-        vehicle_data = {
-            'id': range(1000, 1050),
-            'plate_number_assigned': [f'ABC-{i:03d}' for i in range(50)],
-            'segment': np.random.choice(['Qalyub', 'Suez', 'Alex'], 50)
-        }
-        df_plate_numbers = pd.DataFrame(vehicle_data)
-        
-        # Mock route distances for dead-head calculation
-        routes = [
-            ('Alexandria Port', 'Cairo Hub', 250),
-            ('Cairo Hub', 'Suez DC', 100),
-            ('Suez DC', 'Alexandria Port', 350),
-            ('Cairo Hub', 'Aswan Terminal', 900),
-            ('Qalyub', 'Cairo Hub', 50),
-            ('Qalyub', 'Suez DC', 150),
-        ]
-        df_distance = pd.DataFrame(routes, columns=['shipping_point', 'receiving_point', 'distance'])
-        
-    else:
-        # --- ACTUAL DB CONNECTION LOGIC ---
-        try:
+    try:
             # FIX: Credentials are now stripped above, making this connection cleaner
             conn = psycopg2.connect(
                 host=DB_HOST,
@@ -182,23 +118,8 @@ def load_and_process_data():
     # Fill NaN dead head distances (e.g., end of the vehicle's history) with 0
     df_dedicated['dead_head_distance'] = df_dedicated['dead_head_distance'].fillna(0)
 
-    # 3. Process Spot Shipments (Dead Head is always 0)
-    df_spot = df_master[df_master['transporter_type_description'] == 'spot'].copy()
-    df_spot['dead_head_distance'] = 0.0
-    df_spot['plate_number_assigned'] = None
-    df_spot['segment'] = None
-    df_spot['next_shipping_point'] = None
-    
-    # 4. Concatenate Dedicated and Spot for the Final Master DataFrame
-    # Ensure all columns match before concatenating
-    cols_to_keep = ['shipment', 'transporter_name', 'transporter_type_description', 
-                    'actual_shipment_start', 'shipping_point', 'receiving_point', 
-                    'shipped_distance', 'dead_head_distance', 'plate_number_assigned', 
-                    'segment', 'next_shipping_point']
-                    
-    df_master = pd.concat([df_dedicated[cols_to_keep], df_spot[cols_to_keep]], ignore_index=True)
 
-    # 5. Add final date column (FIXED: Using df_master instead of undefined df)
+    # 3. Add final date column (FIXED: Using df_master instead of undefined df)
     df_master['actual_shipment_date'] = df_master['actual_shipment_start'].dt.date
     
     # Fill NaN values for shippe_distance (routes without distance info) with 0
