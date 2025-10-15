@@ -40,9 +40,6 @@ def load_and_process_data():
     with your actual psycopg2 connection and SQL query logic.
     """
     
-    # --- SIMULATING DATABASE CONNECTION (Replace this block with your code) ---
-    st.write(f"Attempting connection to DB: {DB_NAME} on {DB_HOST}:{DB_PORT}...")
-    time.sleep(1) # Simulate connection time
 
     try:
         # # ACTUAL DB CONNECTION LOGIC (UNCOMMENT AND USE)
