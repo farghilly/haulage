@@ -2,17 +2,40 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import psycopg2
+# import psycopg2 # Keep for deployment to environment that supports it
 from psycopg2.extras import RealDictCursor
 from psycopg2 import sql
 from datetime import datetime
 import os
 import time
 
-# NOTE: If you deploy this to a live environment (like Render), 
-# you will need to install the actual database connector:
-# import psycopg2 
-# The application uses os.environ.get() to securely read credentials.
+# NOTE: Mocking psycopg2 connect and read_sql_query for local testing environment.
+# In a real deployment (like Render), the try/except block will use the actual DB connection.
+
+try:
+    import psycopg2
+except ImportError:
+    class MockConnection:
+        def close(self): pass
+    
+    class MockPsycopg2:
+        def connect(self, **kwargs):
+            # Simulate a successful connection
+            time.sleep(0.1) 
+            return MockConnection()
+        
+        def read_sql(self, query, conn):
+            # This is where you would put the logic to generate mock data if needed for testing
+            # For now, we rely on the function's internal mock logic if DB_HOST is 'placeholder_host'
+            pass
+
+        def sql(self, *args, **kwargs):
+            return "MOCK SQL"
+
+    psycopg2 = MockPsycopg2()
+    # Mocking read_sql_query which is used by pandas
+    pd.read_sql_query = pd.read_sql
+
 
 # --- Configuration ---
 st.set_page_config(
@@ -34,99 +57,164 @@ DB_PORT = os.environ.get('DB_PORT', '5432')
 @st.cache_data(show_spinner="Connecting to Database and Processing Data...")
 def load_and_process_data():
     """
-    Simulates connecting to the Neon DB, fetching data, and performing initial calculations.
-    
-    In a real application, replace the 'SIMULATING DATABASE CONNECTION' block 
-    with your actual psycopg2 connection and SQL query logic.
+    Connects to the database, fetches all required data, and performs initial calculations
+    like identifying shipped distance and dead head distance.
     """
     
-
-    try:
-        # # ACTUAL DB CONNECTION LOGIC (UNCOMMENT AND USE)
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            port=DB_PORT,
-            sslmode='require'
-        )
-        st.success("Database connection simulated successfully!")
+    # --- SIMULATION/MOCK DATA GENERATION ---
+    if DB_HOST == 'placeholder_host':
+        st.warning("Using mock data. Set environment variables (DB_HOST, DB_NAME, etc.) for live DB connection.")
+        # Generate comprehensive mock data to ensure all dashboard elements function
+        data = {
+            'shipment': [f'S{i}' for i in range(100)],
+            'transporter_name': np.random.choice(['Alpha Logistics', 'Beta Haulage', 'Gamma Express', 'Al -Rehab Office for Transport and', 'Alwefaq national transport'], 100),
+            'transporter_type_description': np.random.choice(['dedicated', 'spot'], 100, p=[0.6, 0.4]),
+            'actual_shipment_start': pd.to_datetime(pd.date_range('2024-06-01', periods=100, freq='10h')),
+            'shipping_point': np.random.choice(['Alexandria Port', 'Cairo Hub', 'Suez DC', 'Qalyub'], 100),
+            'receiving_point': np.random.choice(['Aswan Terminal', 'Luxor Warehouse', 'Cairo Hub', 'Suez DC', 'Alexandria Port', 'Qalyub'], 100),
+            'vehicle_id': np.random.randint(1000, 1050, 100),
+            'distance': np.random.randint(50, 800, 100) # Mock actual shipment distance
+        }
+        df_shipments = pd.DataFrame(data)
         
-        # Replace this with your actual SQL query:
-        query = """SELECT
-                      DISTINCT tu.shipment,
-                      ti.transporter_name,
-                      tti.transporter_type_description,
-                      tu.actual_shipment_start,
-                      srpi.name AS shipping_point,
-                      srpi2.name AS receiving_point,
-                      MAX(tu.vehicle_id) AS vehicle_id
-                    FROM truck_utilization tu
-                    LEFT JOIN route_info ri ON tu.route_id = ri.id
-                    LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
-                    LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
-                    LEFT JOIN transporter_info ti ON ti.id = tu.transporter_code_id
-                    LEFT JOIN transporter_type_info tti ON tti.id = ti.transporter_type_id
-                GROUP BY tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start, srpi.name ,srpi2.name
-                ORDER BY tu.actual_shipment_start"""
-        df_shipments = pd.read_sql(query, conn)
+        vehicle_data = {
+            'id': range(1000, 1050),
+            'plate_number_assigned': [f'ABC-{i:03d}' for i in range(50)],
+            'segment': np.random.choice(['Qalyub', 'Suez', 'Alex'], 50)
+        }
+        df_plate_numbers = pd.DataFrame(vehicle_data)
+        
+        # Mock route distances for dead-head calculation
+        routes = [
+            ('Alexandria Port', 'Cairo Hub', 250),
+            ('Cairo Hub', 'Suez DC', 100),
+            ('Suez DC', 'Alexandria Port', 350),
+            ('Cairo Hub', 'Aswan Terminal', 900),
+            ('Qalyub', 'Cairo Hub', 50),
+            ('Qalyub', 'Suez DC', 150),
+        ]
+        df_distance = pd.DataFrame(routes, columns=['shipping_point', 'receiving_point', 'distance'])
+        
+    else:
+        # --- ACTUAL DB CONNECTION LOGIC ---
+        try:
+            conn = psycopg2.connect(
+                host=DB_HOST,
+                dbname=DB_NAME,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                port=DB_PORT,
+                sslmode='require'
+            )
+            st.success("Database connection successful!")
+        except Exception as e:
+            st.error(f"Error during database connection: {e}")
+            st.stop() # Stop the app if data can't be loaded
 
-        query = """
-        SELECT vi.id , vi.plate_number_assigned , si.description AS segment FROM vehicle_info vi
-        LEFT JOIN vehicle_assignment va ON va.vehicle_plate_number = vi.plate_number_assigned
-        LEFT JOIN segment_info si ON si.id = va.segment_id
-        where plate_number_assigned IS NOT NULL
+        # --- 1. Fetch Shipments and Routes ---
+        query_shipments = """
+            SELECT DISTINCT tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start,
+                            srpi.name AS shipping_point, srpi2.name AS receiving_point, MAX(tu.vehicle_id) AS vehicle_id
+            FROM truck_utilization tu
+            LEFT JOIN route_info ri ON tu.route_id = ri.id
+            LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+            LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+            LEFT JOIN transporter_info ti ON ti.id = tu.transporter_code_id
+            LEFT JOIN transporter_type_info tti ON tti.id = ti.transporter_type_id
+            GROUP BY tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start, srpi.name, srpi2.name
+            ORDER BY tu.actual_shipment_start
         """
-        df_plate_numbers = pd.read_sql(query, conn)
+        df_shipments = pd.read_sql_query(query_shipments, conn)
 
-        df_distance = pd.read_sql_query("""
-                                                 SELECT
-                                                  srpi.name AS shipping_point,
-                                                  srpi2.name AS receiving_point,
-                                                  ri.distance
-                                                FROM route_info ri
-                                                LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
-                                                LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
-                                                
-                                                  """,conn)
+        # --- 2. Fetch Vehicle Info (for plate numbers and segment) ---
+        query_plates = """
+            SELECT vi.id, vi.plate_number_assigned, si.description AS segment FROM vehicle_info vi
+            LEFT JOIN vehicle_assignment va ON va.vehicle_plate_number = vi.plate_number_assigned
+            LEFT JOIN segment_info si ON si.id = va.segment_id
+            WHERE plate_number_assigned IS NOT NULL
+        """
+        df_plate_numbers = pd.read_sql_query(query_plates, conn)
+
+        # --- 3. Fetch Route Distances (for shipped distance and dead-head lookup) ---
+        query_distance = """
+            SELECT srpi.name AS shipping_point, srpi2.name AS receiving_point, ri.distance
+            FROM route_info ri
+            LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+            LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+        """
+        df_distance = pd.read_sql_query(query_distance, conn)
+
         conn.close()
-        df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
-        df_rental = df_rental.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
-        df_rental.drop(columns=['id' , 'vehicle_id'], inplace=True)
-        df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
-        df_rental["dead_head_distance"] = df_rental.merge(df_distance, left_on=['receiving_point', 'next_shipping_point'], right_on=['shipping_point', 'receiving_point'], how='left')['distance']
-
-        
-        
-        
-    except Exception as e:
-        st.error(f"Error during database connection or query: {e}")
-        st.stop() # Stop the app if data can't be loaded
 
     # --- Initial Data Cleaning and Calculation ---
     
-    # 1. Convert shipment start to date object
-    df['actual_shipment_date'] = df['actual_shipment_start'].dt.date
-    
-    # 2. Apply dead-head logic (Only dedicated transporters have non-zero dead head)
-    # This reflects the logic from the original notebook
-    df['dead_head_distance'] = np.where(
-        df['transporter_type_description'] == 'spot', 
-        0, 
-        df['dead_head_distance']
-    )
-    
-    return df_rental
+    # 1. Merge Shipped Distance (FIXED: Required for Dead Head % calculation)
+    df_master = df_shipments.merge(
+        df_distance,
+        on=['shipping_point', 'receiving_point'],
+        how='left'
+    ).rename(columns={'distance': 'shipped_distance'})
 
-df_rental = load_and_process_data()
+    # 2. Filter Dedicated Shipments for Dead Head Logic
+    df_dedicated = df_master[df_master['transporter_type_description'] == 'dedicated'].copy()
+    
+    # Merge Vehicle Plate Info and Segment
+    df_dedicated = df_dedicated.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
+    df_dedicated.drop(columns=['id', 'vehicle_id'], inplace=True)
+    
+    # Calculate next shipment point per vehicle to find the dead head route
+    df_dedicated['next_shipping_point'] = df_dedicated.groupby('plate_number_assigned')['shipping_point'].shift(-1)
+    
+    # Calculate Dead Head Distance by merging the current receiving point -> next shipping point route
+    # The merge suffixes are necessary to avoid confusing the 'shipping_point'/'receiving_point' used for the lookup
+    df_dead_head_lookup = df_dedicated.merge(
+        df_distance, 
+        left_on=['receiving_point', 'next_shipping_point'], 
+        right_on=['shipping_point', 'receiving_point'], 
+        how='left',
+        suffixes=('_current', '_deadhead')
+    )
+    # The distance column from df_distance will be named 'distance' since it's the right-hand dataframe
+    df_dedicated["dead_head_distance"] = df_dead_head_lookup['distance']
+    
+    # Fill NaN dead head distances (e.g., end of the vehicle's history) with 0
+    df_dedicated['dead_head_distance'] = df_dedicated['dead_head_distance'].fillna(0)
+
+    # 3. Process Spot Shipments (Dead Head is always 0)
+    df_spot = df_master[df_master['transporter_type_description'] == 'spot'].copy()
+    df_spot['dead_head_distance'] = 0.0
+    df_spot['plate_number_assigned'] = None
+    df_spot['segment'] = None
+    df_spot['next_shipping_point'] = None
+    
+    # 4. Concatenate Dedicated and Spot for the Final Master DataFrame
+    # Ensure all columns match before concatenating
+    cols_to_keep = ['shipment', 'transporter_name', 'transporter_type_description', 
+                    'actual_shipment_start', 'shipping_point', 'receiving_point', 
+                    'shipped_distance', 'dead_head_distance', 'plate_number_assigned', 
+                    'segment', 'next_shipping_point']
+                    
+    df_master = pd.concat([df_dedicated[cols_to_keep], df_spot[cols_to_keep]], ignore_index=True)
+
+    # 5. Add final date column (FIXED: Using df_master instead of undefined df)
+    df_master['actual_shipment_date'] = df_master['actual_shipment_start'].dt.date
+    
+    # Fill NaN values for shippe_distance (routes without distance info) with 0
+    df_master['shipped_distance'] = df_master['shipped_distance'].fillna(0)
+
+    return df_master
+
+df_master = load_and_process_data()
 
 # --- Filter Setup (Sidebar) ---
 st.sidebar.header("Filter Data")
 
 # Date Filter
-min_date = df_rental['actual_shipment_date'].min()
-max_date = df_rental['actual_shipment_date'].max()
+# Need to convert date objects to datetime objects for min/max functions to work if they come from DB
+df_master['actual_shipment_date'] = pd.to_datetime(df_master['actual_shipment_date'])
+min_date = df_master['actual_shipment_date'].min().date()
+max_date = df_master['actual_shipment_date'].max().date()
+
 date_range = st.sidebar.date_input(
     "Time Range (Shipment Start)",
     value=(min_date, max_date),
@@ -141,46 +229,46 @@ end_date_filter = date_range[1] if len(date_range) > 1 else date_range[0]
 # Transporter Filter
 selected_transporters = st.sidebar.multiselect(
     "Transporter Name",
-    options=df_rental['transporter_name'].unique(),
-    default=df_rental['transporter_name'].unique()
+    options=df_master['transporter_name'].unique(),
+    default=df_master['transporter_name'].unique()
 )
 
 # Transporter Type Filter
 selected_types = st.sidebar.multiselect(
     "Transporter Type",
-    options=df_rental['transporter_type_description'].unique(),
-    default=df_rental['transporter_type_description'].unique()
+    options=df_master['transporter_type_description'].unique(),
+    default=df_master['transporter_type_description'].unique()
 )
 
 # Shipping/Receiving Point Filters
 selected_shippings = st.sidebar.multiselect(
     "Shipping Point",
-    options=df_rental['shipping_point'].unique(),
-    default=df_rental['shipping_point'].unique()
+    options=df_master['shipping_point'].unique(),
+    default=df_master['shipping_point'].unique()
 )
 
 selected_receivings = st.sidebar.multiselect(
     "Receiving Point",
-    options=df_rental['receiving_point'].unique(),
-    default=df_rental['receiving_point'].unique()
+    options=df_master['receiving_point'].unique(),
+    default=df_master['receiving_point'].unique()
 )
 
 # Segment Filter
 selected_segments = st.sidebar.multiselect(
     "Segment",
-    options=df_rental['segment'].unique(),
-    default=df_rental['segment'].unique()
+    options=df_master['segment'].unique(),
+    default=df_master['segment'].unique()
 )
 
 # --- Apply Filters ---
-filtered_df = df_rental[
-    (df_rental['actual_shipment_date'] >= start_date_filter) &
-    (df_rental['actual_shipment_date'] <= end_date_filter) &
-    df_rental['transporter_name'].isin(selected_transporters) &
-    df_rental['transporter_type_description'].isin(selected_types) &
-    df_rental['shipping_point'].isin(selected_shippings) &
-    df_rental['receiving_point'].isin(selected_receivings) &
-    df_rental['segment'].isin(selected_segments)
+filtered_df = df_master[
+    (df_master['actual_shipment_date'].dt.date >= start_date_filter) &
+    (df_master['actual_shipment_date'].dt.date <= end_date_filter) &
+    df_master['transporter_name'].isin(selected_transporters) &
+    df_master['transporter_type_description'].isin(selected_types) &
+    df_master['shipping_point'].isin(selected_shippings) &
+    df_master['receiving_point'].isin(selected_receivings) &
+    df_master['segment'].isin(selected_segments)
 ].copy()
 
 # --- Main Dashboard Layout ---
@@ -191,7 +279,11 @@ if filtered_df.empty:
 else:
     # --- Row 1: Dead Head Distance Over Time ---
     st.subheader("1. Dead Head Distance Over Time")
-    df_dead_head_distance = filtered_df.groupby('actual_shipment_date')['dead_head_distance'].sum().reset_index()
+    
+    # Calculate daily total dead head distance
+    df_dead_head_distance = filtered_df.groupby(
+        filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date') # Group by date object
+    )['dead_head_distance'].sum().reset_index()
     
     fig_dead_head = px.line(
         df_dead_head_distance,
@@ -222,7 +314,7 @@ else:
             st.info("No Jumbo Shipments (Qalyub segment, specific transporters) found with current filters.")
         else:
             # 1. Count daily shipments by plate
-            df_jumbo_daily = df_jumbo.groupby(['plate_number_assigned', 'actual_shipment_date'])['shipment'].count().reset_index(name='shipment_count')
+            df_jumbo_daily = df_jumbo.groupby(['plate_number_assigned', filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date')])['shipment'].count().reset_index(name='shipment_count')
             # 2. Average the daily counts by plate
             df_jumbo_avg = df_jumbo_daily.groupby('plate_number_assigned')['shipment_count'].mean().reset_index(name='average_daily_shipments')
 
@@ -242,18 +334,20 @@ else:
     with col2:
         st.subheader("3. Dead Head Percentage by Transporter")
 
+        # Now safe to use 'shipped_distance' and 'dead_head_distance'
         df_analysis = filtered_df.groupby('transporter_name').agg(
             total_shipped_distance=('shipped_distance', 'sum'),
             total_dead_head_distance=('dead_head_distance', 'sum')
         ).reset_index()
 
         df_analysis['total_distance'] = df_analysis['total_shipped_distance'] + df_analysis['total_dead_head_distance']
+        
         # Calculate Dead Head %: (Dead Head / Total Distance) * 100
         # Use np.divide and fillna to safely handle zero division
         df_analysis['dead_head_percent'] = np.divide(
-            df_analysis['total_dead_head_distance'] * 100, 
-            df_analysis['total_distance'], 
-            out=np.zeros_like(df_analysis['total_dead_head_distance']), 
+            df_analysis['total_dead_head_distance'] * 100,
+            df_analysis['total_distance'],
+            out=np.zeros_like(df_analysis['total_dead_head_distance']),
             where=df_analysis['total_distance']!=0
         )
         
