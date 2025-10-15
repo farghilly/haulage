@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from psycopg2 import sql
 from datetime import datetime
 import os
 import time
@@ -13,7 +16,7 @@ import time
 
 # --- Configuration ---
 st.set_page_config(
-    page_title="Logistics Efficiency Dashboard",
+    page_title="Haulage Dashboard",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -43,45 +46,63 @@ def load_and_process_data():
 
     try:
         # # ACTUAL DB CONNECTION LOGIC (UNCOMMENT AND USE)
-        # conn = psycopg2.connect(
-        #     host=DB_HOST,
-        #     dbname=DB_NAME,
-        #     user=DB_USER,
-        #     password=DB_PASSWORD,
-        #     port=DB_PORT,
-        #     sslmode='require'
-        # )
-        # st.success("Database connection simulated successfully!")
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT,
+            sslmode='require'
+        )
+        st.success("Database connection simulated successfully!")
         
-        # # Replace this with your actual SQL query:
-        # query = "SELECT * FROM your_logistics_table;"
-        # df = pd.read_sql(query, conn)
-        # conn.close()
+        # Replace this with your actual SQL query:
+        query = """SELECT
+                      DISTINCT tu.shipment,
+                      ti.transporter_name,
+                      tti.transporter_type_description,
+                      tu.actual_shipment_start,
+                      srpi.name AS shipping_point,
+                      srpi2.name AS receiving_point,
+                      MAX(tu.vehicle_id) AS vehicle_id
+                    FROM truck_utilization tu
+                    LEFT JOIN route_info ri ON tu.route_id = ri.id
+                    LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+                    LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+                    LEFT JOIN transporter_info ti ON ti.id = tu.transporter_code_id
+                    LEFT JOIN transporter_type_info tti ON tti.id = ti.transporter_type_id
+                GROUP BY tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start, srpi.name ,srpi2.name
+                ORDER BY tu.actual_shipment_start"""
+        df_shipments = pd.read_sql(query, conn)
+
+        query = """
+        SELECT vi.id , vi.plate_number_assigned , si.description AS segment FROM vehicle_info vi
+        LEFT JOIN vehicle_assignment va ON va.vehicle_plate_number = vi.plate_number_assigned
+        LEFT JOIN segment_info si ON si.id = va.segment_id
+        where plate_number_assigned IS NOT NULL
+        """
+        df_plate_numbers = pd.read_sql(query, conn)
+
+        df_distance = pd.read_sql_query("""
+                                                 SELECT
+                                                  srpi.name AS shipping_point,
+                                                  srpi2.name AS receiving_point,
+                                                  ri.distance
+                                                FROM route_info ri
+                                                LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+                                                LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+                                                
+                                                  """,conn)
+        conn.close()
+        df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
+        df_rental = df_rental.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
+        df_rental.drop(columns=['id' , 'vehicle_id'], inplace=True)
+        df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
+        df_rental["dead_head_distance"] = df_rental.merge(df_distance, left_on=['receiving_point', 'next_shipping_point'], right_on=['shipping_point', 'receiving_point'], how='left')['distance']
+
         
-        # --- MOCK DATA GENERATION (To be replaced by actual data) ---
-        np.random.seed(42)
-        dates = pd.to_datetime(pd.date_range('2024-01-01', periods=100, freq='D'))
-        transporters = ['Al -Rehab Office for Transport and', 'Alwefaq national transport', 'Generic Transporter A', 'Transporter Beta']
-        segments = ['Qalyub', 'Giza', 'Alexandria', 'Ismailia']
-        locations = ['Port Said', 'Cairo', 'Suez', 'Alexandria', 'Qalyub', 'Aswan']
-
-        N = 1000
-        data = {
-            'shipment': [f'S{i}' for i in range(N)],
-            'actual_shipment_start': np.random.choice(dates, N),
-            'transporter_name': np.random.choice(transporters, N, p=[0.25, 0.25, 0.3, 0.2]),
-            'transporter_type_description': np.random.choice(['dedicated', 'spot'], N, p=[0.7, 0.3]),
-            'shipping_point': np.random.choice(locations, N),
-            'receiving_point': np.random.choice(locations, N),
-            'plate_number_assigned': np.random.choice([f'PLATE{i:02d}' for i in range(1, 15)], N),
-            'segment': np.random.choice(segments, N),
-            'dead_head_distance': np.random.uniform(0, 200, N).round(2),
-            'shipped_distance': np.random.uniform(100, 1000, N).round(2)
-        }
-        df = pd.DataFrame(data)
-        st.success("Successfully loaded mock data!")
-        # --- END MOCK DATA GENERATION ---
-
+        
+        
     except Exception as e:
         st.error(f"Error during database connection or query: {e}")
         st.stop() # Stop the app if data can't be loaded
@@ -99,7 +120,7 @@ def load_and_process_data():
         df['dead_head_distance']
     )
     
-    return df
+    return df_rental
 
 df_rental = load_and_process_data()
 
