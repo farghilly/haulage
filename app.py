@@ -48,11 +48,12 @@ st.set_page_config(
 
 # Mock Database Credentials (Read securely from environment variables)
 # IMPORTANT: You must set these variables on your hosting platform (e.g., Render)
-DB_HOST = os.environ.get('DB_HOST', 'placeholder_host')
-DB_NAME = os.environ.get('DB_NAME', 'placeholder_db')
-DB_USER = os.environ.get('DB_USER', 'placeholder_user')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'placeholder_password')
-DB_PORT = os.environ.get('DB_PORT', '5432')
+# FIX: Added .strip().strip("'").strip('"') to safely remove leading/trailing spaces or accidental quotes
+DB_HOST = os.environ.get('DB_HOST', 'placeholder_host').strip().strip("'").strip('"')
+DB_NAME = os.environ.get('DB_NAME', 'placeholder_db').strip().strip("'").strip('"')
+DB_USER = os.environ.get('DB_USER', 'placeholder_user').strip().strip("'").strip('"')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'placeholder_password').strip().strip("'").strip('"')
+DB_PORT = os.environ.get('DB_PORT', '5432').strip().strip("'").strip('"')
 
 @st.cache_data(show_spinner="Connecting to Database and Processing Data...")
 def load_and_process_data():
@@ -98,6 +99,7 @@ def load_and_process_data():
     else:
         # --- ACTUAL DB CONNECTION LOGIC ---
         try:
+            # FIX: Credentials are now stripped above, making this connection cleaner
             conn = psycopg2.connect(
                 host=DB_HOST,
                 dbname=DB_NAME,
