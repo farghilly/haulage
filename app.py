@@ -45,44 +45,44 @@ def load_and_process_data():
                 sslmode='require'
             )
             st.success("Database connection successful!")
-        except Exception as e:
-            st.error(f"Error during database connection: {e}")
-            st.stop() # Stop the app if data can't be loaded
+    except Exception as e:
+        st.error(f"Error during database connection: {e}")
+        st.stop() # Stop the app if data can't be loaded
 
         # --- 1. Fetch Shipments and Routes ---
-        query_shipments = """
-            SELECT DISTINCT tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start,
-                            srpi.name AS shipping_point, srpi2.name AS receiving_point, MAX(tu.vehicle_id) AS vehicle_id
-            FROM truck_utilization tu
-            LEFT JOIN route_info ri ON tu.route_id = ri.id
-            LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
-            LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
-            LEFT JOIN transporter_info ti ON ti.id = tu.transporter_code_id
-            LEFT JOIN transporter_type_info tti ON tti.id = ti.transporter_type_id
-            GROUP BY tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start, srpi.name, srpi2.name
-            ORDER BY tu.actual_shipment_start
-        """
-        df_shipments = pd.read_sql_query(query_shipments, conn)
+    query_shipments = """
+        SELECT DISTINCT tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start,
+                        srpi.name AS shipping_point, srpi2.name AS receiving_point, MAX(tu.vehicle_id) AS vehicle_id
+        FROM truck_utilization tu
+        LEFT JOIN route_info ri ON tu.route_id = ri.id
+        LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+        LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+        LEFT JOIN transporter_info ti ON ti.id = tu.transporter_code_id
+        LEFT JOIN transporter_type_info tti ON tti.id = ti.transporter_type_id
+        GROUP BY tu.shipment, ti.transporter_name, tti.transporter_type_description, tu.actual_shipment_start, srpi.name, srpi2.name
+        ORDER BY tu.actual_shipment_start
+    """
+    df_shipments = pd.read_sql_query(query_shipments, conn)
 
-        # --- 2. Fetch Vehicle Info (for plate numbers and segment) ---
-        query_plates = """
-            SELECT vi.id, vi.plate_number_assigned, si.description AS segment FROM vehicle_info vi
-            LEFT JOIN vehicle_assignment va ON va.vehicle_plate_number = vi.plate_number_assigned
-            LEFT JOIN segment_info si ON si.id = va.segment_id
-            WHERE plate_number_assigned IS NOT NULL
-        """
-        df_plate_numbers = pd.read_sql_query(query_plates, conn)
+    # --- 2. Fetch Vehicle Info (for plate numbers and segment) ---
+    query_plates = """
+        SELECT vi.id, vi.plate_number_assigned, si.description AS segment FROM vehicle_info vi
+        LEFT JOIN vehicle_assignment va ON va.vehicle_plate_number = vi.plate_number_assigned
+        LEFT JOIN segment_info si ON si.id = va.segment_id
+        WHERE plate_number_assigned IS NOT NULL
+    """
+    df_plate_numbers = pd.read_sql_query(query_plates, conn)
 
-        # --- 3. Fetch Route Distances (for shipped distance and dead-head lookup) ---
-        query_distance = """
-            SELECT srpi.name AS shipping_point, srpi2.name AS receiving_point, ri.distance
-            FROM route_info ri
-            LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
-            LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
-        """
-        df_distance = pd.read_sql_query(query_distance, conn)
+    # --- 3. Fetch Route Distances (for shipped distance and dead-head lookup) ---
+    query_distance = """
+        SELECT srpi.name AS shipping_point, srpi2.name AS receiving_point, ri.distance
+        FROM route_info ri
+        LEFT JOIN shipping_receiving_points_info srpi ON ri.shipping_point_id = srpi.id
+        LEFT JOIN shipping_receiving_points_info srpi2 ON ri.receiving_point_id = srpi2.id
+    """
+    df_distance = pd.read_sql_query(query_distance, conn)
 
-        conn.close()
+    conn.close()
 
     # --- Initial Data Cleaning and Calculation ---
     
