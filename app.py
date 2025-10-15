@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from psycopg2.extras import RealDictCursor
+import psycopg2
+from psycopg2 import sql
 from psycopg2 import sql
 from datetime import datetime
 import os
