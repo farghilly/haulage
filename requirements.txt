@@ -2,4 +2,5 @@ streamlit
 pandas
 numpy
 plotly
-psycopg2-binary # For the real Neon database connection
+psycopg2-binary
+psycopg2
