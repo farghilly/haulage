@@ -7,7 +7,7 @@ import plotly.express as px
 # ------------------------------
 # PAGE SETUP
 # ------------------------------
-st.set_page_config(page_title="Dead Head Analysis Dashboard", layout="wide")
+st.set_page_config(page_title="Haulage Analysis Dashboard", layout="wide")
 st.title("🚛 Dead Head Analysis Dashboard")
 
 # ------------------------------
