@@ -173,10 +173,7 @@ with tab2:
     st.subheader("🚚 Average Jumbo Shipments")
     df_jumbo = filtered_df[
         (filtered_df['segment'] == 'Qalyub') &
-        (filtered_df['transporter_name'].isin([
-            'Al -Rehab Office for Transport and',
-            'Alwefaq national transport'
-        ]))
+        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and','Alwefaq national  transport']))
     ]
     if not df_jumbo.empty:
         df_jumbo = (df_jumbo
