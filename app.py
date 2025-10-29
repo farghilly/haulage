@@ -148,7 +148,7 @@ filtered_df = df_rental[
 # ------------------------------
 # TABS
 # ------------------------------
-tab1, tab2 = st.tabs(["Dead Head & Total Distance", "Average Jumbo Shipments"])
+tab1, tab2 = st.tabs(["Fleet Utilization", "Average Jumbo Shipments"])
 
 # ------------------------------
 # TAB 1: Dead Head & Total Distance
