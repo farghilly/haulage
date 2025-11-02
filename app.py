@@ -188,108 +188,63 @@ def save_attendance_log(df_log):
 
 # --- TAB UI ---
 def attendance_tab():
-    st.title("📅 Daily Attendance Log")
 
-    assignments = load_assignments()
-    drivers = load_drivers()
-
-    segment_options = assignments['segment'].unique()
-    selected_segment = st.selectbox("Select Segment (only one)", options=segment_options)
-
-    filtered_assignments = assignments[assignments['segment'] == selected_segment]
-
-    transporter_options = filtered_assignments['transporter_name'].unique()
-    selected_transporters = st.multiselect("Select Transporter(s)", options=transporter_options, default=transporter_options)
-
-    filtered_assignments = filtered_assignments[filtered_assignments['transporter_name'].isin(selected_transporters)]
-
-    plate_numbers = filtered_assignments['vehicle_plate_number'].unique()
+    # Simulate loading drivers and vehicles (replace with your actual DB loading)
+    drivers = pd.DataFrame({'id': [1,2,3], 'driver_name': ['Alice', 'Bob', 'Charlie']})
+    vehicles = ['TRUCK-001', 'TRUCK-002', 'TRUCK-003']
 
     today = date.today()
     first_day = today.replace(day=1)
     last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-    selected_month = st.date_input("Select month", value=first_day, min_value=first_day, max_value=last_day)
+    days_in_month = pd.date_range(start=first_day, end=last_day)
 
-    log_df = load_attendance_log(selected_month.strftime("%Y-%m-01"))
-
-    days_in_month = pd.date_range(start=selected_month, end=last_day)
-
-    base_df = pd.DataFrame({'vehicle_plate_number': plate_numbers})
-
-    # Parse daily_log from JSON string to list
-    log_df['daily_log'] = log_df['daily_log'].apply(lambda x: json.loads(x) if pd.notna(x) else [0]*len(days_in_month))
-
-    # Merge
-    base_df = base_df.merge(log_df[['vehicle_plate_number', 'driver_id', 'daily_log']], on='vehicle_plate_number', how='left')
-
-    # Add columns for each day
-    for i, day in enumerate(days_in_month):
-        base_df[day.strftime('%Y-%m-%d')] = base_df['daily_log'].apply(lambda x: x[i] if isinstance(x, list) and len(x) > i else 0)
-
-
-    # Drop daily_log column (no longer needed)
-    base_df.drop(columns=['daily_log'], inplace=True)
-
-    # Add driver names to base_df
-    driver_map = dict(zip(drivers['id'], drivers['driver_name']))
-    base_df['driver_name'] = base_df['driver_id'].map(driver_map)
-
-    # Prepare driver choices
-    driver_choices = ["-- Select Driver --"] + list(drivers['driver_name'])
-
-    # Add driver selection column
-    if 'driver_name' not in base_df.columns:
-        base_df['driver_name'] = "-- Select Driver --"
-
-    # Show editable table with Streamlit experimental_data_editor
-    edited_df = st.experimental_data_editor(
-        base_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            'vehicle_plate_number': st.column_config.TextColumn('Vehicle Plate Number', disabled=True),
-            'driver_name': st.column_config.SelectboxColumn('Driver', options=driver_choices),
-            # For day columns, you can restrict to numeric inputs 0, 0.5, 1 if you want
-            **{day.strftime('%Y-%m-%d'): st.column_config.NumberColumn(
-                day.strftime('%d'),
-                min_value=0.0,
-                max_value=1.0,
-                step=0.5
-            ) for day in days_in_month}
+    # Initialize attendance data structure (in your case, you would load from DB)
+    attendance_data = {}
+    for vehicle in vehicles:
+        attendance_data[vehicle] = {
+            'driver': None,
+            'daily_log': {day.strftime('%Y-%m-%d'): 0 for day in days_in_month}
         }
-    )
 
-    if st.button("Submit Attendance Log"):
-        # Validate no duplicate drivers except "-- Select Driver --"
-        drivers_selected = edited_df['driver_name'].tolist()
-        drivers_filtered = [d for d in drivers_selected if d != "-- Select Driver --"]
-        if len(set(drivers_filtered)) < len(drivers_filtered):
-            st.error("Each driver can only be assigned to one vehicle.")
-            return
+    st.write("### Attendance Input Table")
 
-        # Prepare dataframe to save
-        save_rows = []
-        for _, row in edited_df.iterrows():
-            vehicle = row['vehicle_plate_number']
-            driver = row['driver_name']
-            driver_id = drivers.loc[drivers['driver_name'] == driver, 'id'].values[0] if driver != "-- Select Driver --" else None
+    for vehicle in vehicles:
+        st.write(f"**Vehicle: {vehicle}**")
 
-            # Collect daily logs as list in correct order
-            daily_logs = [row[day.strftime('%Y-%m-%d')] for day in days_in_month]
+        # Driver selectbox
+        driver_name = st.selectbox(
+            f"Select Driver for {vehicle}",
+            options=["-- Select Driver --"] + list(drivers['driver_name']),
+            key=f"driver_{vehicle}"
+        )
+        attendance_data[vehicle]['driver'] = driver_name if driver_name != "-- Select Driver --" else None
 
-            total_working_days = sum(daily_logs)
+        cols = st.columns(len(days_in_month))
+        for i, day in enumerate(days_in_month):
+            with cols[i]:
+                val = st.selectbox(
+                    day.day,
+                    options=[0, 0.5, 1],
+                    index=0,
+                    key=f"{vehicle}_{day.strftime('%Y-%m-%d')}"
+                )
+                attendance_data[vehicle]['daily_log'][day.strftime('%Y-%m-%d')] = val
 
-            save_rows.append({
-                'month': selected_month.strftime("%Y-%m-01"),
+        st.markdown("---")
+
+    if st.button("Save Attendance"):
+        # Convert daily_log dicts to JSON strings for saving or further processing
+        to_save = []
+        for vehicle, info in attendance_data.items():
+            total_days = sum(info['daily_log'].values())
+            to_save.append({
                 'vehicle_plate_number': vehicle,
-                'driver_id': driver_id,
-                'total_working_days': total_working_days,
-                'daily_log': json.dumps(daily_logs)
+                'driver_name': info['driver'],
+                'total_working_days': total_days,
+                'daily_log': json.dumps(info['daily_log'])
             })
-
-        df_to_save = pd.DataFrame(save_rows)
-        save_attendance_log(df_to_save)
-        st.success("Attendance log saved successfully.")
+        st.write("Data ready to save:", to_save)
+        # Save to DB logic here...
 
 # ------------------------------
 # TABS
