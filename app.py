@@ -154,12 +154,6 @@ tab_log, tab_fleet = st.tabs(["Daily Log", "Fleet Utilization"])
 with tab_log:
     st.subheader("🕒 Daily Attendance Log")
 
-    # Hide global sidebar filters when on this tab
-    st.markdown(
-        "<style>[data-testid='stSidebar'] {display: none;}</style>",
-        unsafe_allow_html=True
-    )
-
     # --- Fetch vehicle assignments ---
     df_assignments = pd.read_sql_query("""
         SELECT vehicle_assignment.vehicle_plate_number,
