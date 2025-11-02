@@ -239,7 +239,9 @@ with tab_log:
         # 3. Fill with existing daily_log data if available
         for _, row in df_attendance.iterrows():
             plate = row["vehicle_plate_number"]
-            daily_log = json.loads(row["daily_log"])
+            daily_log = row["daily_log"]
+            if isinstance(daily_log, str):
+                daily_log = json.loads(daily_log)
             idx = data.index[data["Vehicle"] == plate]
             if not idx.empty:
                 idx = idx[0]
