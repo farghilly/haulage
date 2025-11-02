@@ -193,16 +193,16 @@ with tab2:
         st.info("No Jumbo shipment data available for the selected filters.")
 
 
-# ------------------------------
-# TAB 3: Daily Log (Pivot Style Attendance)
-# ------------------------------
 with tab3:
     st.subheader("🕒 Daily Attendance Log")
 
-    # Hide sidebar filters visually for this tab
-    st.sidebar.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+    # Hide global sidebar filters when on this tab
+    st.markdown(
+        "<style>[data-testid='stSidebar'] {display: none;}</style>",
+        unsafe_allow_html=True
+    )
 
-    # --- Fetch vehicle assignment data ---
+    # --- Fetch vehicle assignments ---
     df_assignments = pd.read_sql_query("""
         SELECT vehicle_assignment.vehicle_plate_number,
                transporter_info.transporter_name,
@@ -218,10 +218,12 @@ with tab3:
     df_drivers = pd.read_sql_query("""
         SELECT id, driver_name FROM driver_info
     """, conn)
-    driver_map = dict(zip(df_drivers['driver_name'], df_drivers['id']))
+    driver_map = dict(zip(df_drivers["driver_name"], df_drivers["id"]))
 
-    # --- Local Filters (inside tab) ---
-    col1, col2, col3, col4 = st.columns(4)
+    # ------------------------------
+    # FILTERS (Segment / Transporter / Plate / Date)
+    # ------------------------------
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         selected_segment = st.selectbox(
@@ -244,11 +246,6 @@ with tab3:
             "Plate Number", df_filtered_transporter["vehicle_plate_number"].unique()
         )
 
-    with col4:
-        selected_drivers = st.multiselect(
-            "Driver(s)", df_drivers["driver_name"].tolist()
-        )
-
     date_range = st.date_input(
         "Select Date Range",
         [pd.Timestamp.today().replace(day=1), pd.Timestamp.today()]
@@ -261,51 +258,103 @@ with tab3:
         st.warning("Please select a valid date range.")
         st.stop()
 
-    if selected_plates and selected_drivers:
-        # --- Create empty attendance pivot table ---
-        data = pd.DataFrame(0, index=selected_plates, columns=[str(d.date()) for d in days])
-        st.write("### Fill Attendance (1 / 0.5 / 0)")
+    # ------------------------------
+    # PIVOT TABLE (Editable)
+    # ------------------------------
+    if selected_plates:
+        st.write(f"### Attendance for {selected_segment} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
+
+        # Base pivot table structure
+        data = pd.DataFrame({
+            "Vehicle": selected_plates,
+            "Driver": [None] * len(selected_plates)
+        })
+
+        # Add columns for each day
+        for day in days:
+            data[str(day.date())] = 0
+
+        # Define column configuration for the editable table
+        col_config = {
+            "Vehicle": st.column_config.Column(disabled=True),
+            "Driver": st.column_config.SelectboxColumn(
+                "Driver",
+                options=df_drivers["driver_name"].tolist(),
+                required=True,
+                help="Assign a driver to this vehicle (unique per table)."
+            ),
+        }
+        # Add numeric columns for attendance days
+        for day in days:
+            col_config[str(day.date())] = st.column_config.SelectboxColumn(
+                label=str(day.date()),
+                options=[1, 0.5, 0],
+                help="Mark 1 (Present), 0.5 (Half Day), or 0 (Absent).",
+                default=0,
+            )
+
+        # Editable table
         edited_df = st.data_editor(
             data,
             use_container_width=True,
             key="pivot_attendance",
-            num_rows="dynamic"
+            column_config=col_config,
+            num_rows="fixed"
         )
 
-        # --- Submit Button ---
+        # Validate unique driver assignment
+        if edited_df["Driver"].duplicated().any():
+            st.error("❌ Each driver can only be assigned to one vehicle in this table.")
+            st.stop()
+
+        # ------------------------------
+        # SUBMIT BUTTON
+        # ------------------------------
         if st.button("✅ Submit Attendance"):
             cursor = conn.cursor()
 
-            for plate in selected_plates:
-                for driver_name in selected_drivers:
-                    driver_id = driver_map[driver_name]
-                    daily_log = {
-                        str(day): float(edited_df.loc[plate, str(day)]) for day in edited_df.columns
-                    }
-                    total_days = sum(daily_log.values())
-                    month_start = pd.Timestamp(start_date).replace(day=1).date()
+            for _, row in edited_df.iterrows():
+                plate = row["Vehicle"]
+                driver_name = row["Driver"]
 
-                    cursor.execute("""
-                        INSERT INTO rental_vehicles_log (month, vehicle_plate_number, driver_id,
-                                                         total_working_days, daily_log, last_updated)
-                        VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
-                        ON CONFLICT (month, vehicle_plate_number, driver_id)
-                        DO UPDATE SET
-                            total_working_days = EXCLUDED.total_working_days,
-                            daily_log = EXCLUDED.daily_log,
-                            last_updated = NOW();
-                    """, (month_start, plate, driver_id, total_days, json.dumps(daily_log)))
+                if not driver_name:
+                    continue
+
+                driver_id = driver_map.get(driver_name)
+                if not driver_id:
+                    st.warning(f"Driver '{driver_name}' not found in database.")
+                    continue
+
+                # Prepare daily log JSON
+                daily_log = {
+                    col: float(row[col]) for col in edited_df.columns if col not in ["Vehicle", "Driver"]
+                }
+                total_days = sum(daily_log.values())
+                month_start = pd.Timestamp(start_date).replace(day=1).date()
+
+                cursor.execute("""
+                    INSERT INTO rental_vehicles_log (month, vehicle_plate_number, driver_id,
+                                                     total_working_days, daily_log, last_updated)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
+                    ON CONFLICT (month, vehicle_plate_number, driver_id)
+                    DO UPDATE SET
+                        total_working_days = EXCLUDED.total_working_days,
+                        daily_log = EXCLUDED.daily_log,
+                        last_updated = NOW();
+                """, (month_start, plate, driver_id, total_days, json.dumps(daily_log)))
 
             conn.commit()
             st.success("✅ Attendance data submitted successfully!")
 
-        # --- Attendance History ---
+        # ------------------------------
+        # HISTORY
+        # ------------------------------
         st.markdown("---")
         st.subheader("📜 Attendance History")
 
         query = """
-            SELECT r.month, r.vehicle_plate_number, d.driver_name, r.total_working_days,
-                   r.daily_log, r.last_updated
+            SELECT r.month, r.vehicle_plate_number, d.driver_name,
+                   r.total_working_days, r.daily_log, r.last_updated
             FROM rental_vehicles_log r
             LEFT JOIN driver_info d ON r.driver_id = d.id
             WHERE r.vehicle_plate_number = ANY(%s)
