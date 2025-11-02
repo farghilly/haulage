@@ -149,51 +149,9 @@ filtered_df = df_rental[
 # ------------------------------
 # TABS
 # ------------------------------
-tab1, tab2, tab3 = st.tabs([
-    "Fleet Utilization",
-    "Average Jumbo Shipments",
-    "Daily Log"
-])
+tab_log, tab_fleet = st.tabs(["Daily Log", "Fleet Utilization"])
 
-# ------------------------------
-# TAB 1: Fleet Utilization
-# ------------------------------
-with tab1:
-    st.subheader("📊 Dead Head Distance Over Time")
-    df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
-    fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
-                   title='Dead Head Distance Over Time', markers=True, template='plotly_white')
-    st.plotly_chart(fig1, use_container_width=True)
-
-    st.subheader("📈 Total Distance Travelled Over Time")
-    df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
-    fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
-                   title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-    st.plotly_chart(fig2, use_container_width=True)
-
-# ------------------------------
-# TAB 2: Average Jumbo Shipments
-# ------------------------------
-with tab2:
-    st.subheader("🚚 Average Jumbo Shipments")
-    df_jumbo = filtered_df[
-        (filtered_df['segment'] == 'Qalyub') &
-        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and','Alwefaq national  transport']))
-    ]
-    if not df_jumbo.empty:
-        df_jumbo = (df_jumbo
-                    .groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
-                    .count()
-                    .reset_index())
-        df_jumbo = df_jumbo.groupby('plate_number_assigned')['shipment'].mean().reset_index()
-        fig3 = px.bar(df_jumbo, x='shipment', y='plate_number_assigned',
-                      title='Average Jumbo Shipments', orientation='h', template='plotly_white')
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("No Jumbo shipment data available for the selected filters.")
-
-
-with tab3:
+with tab_log:
     st.subheader("🕒 Daily Attendance Log")
 
     # Hide global sidebar filters when on this tab
@@ -365,3 +323,35 @@ with tab3:
             st.dataframe(df_history, use_container_width=True)
         else:
             st.info("No attendance history found for selected vehicles.")
+
+with tab_fleet:
+    st.subheader("📊 Dead Head Distance Over Time")
+    df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
+    fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
+                   title='Dead Head Distance Over Time', markers=True, template='plotly_white')
+    st.plotly_chart(fig1, use_container_width=True)
+
+    st.subheader("📈 Total Distance Travelled Over Time")
+    df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
+    fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
+                   title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
+    st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("🚚 Average Jumbo Shipments")
+    df_jumbo = filtered_df[
+        (filtered_df['segment'] == 'Qalyub') &
+        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and','Alwefaq national  transport']))
+    ]
+    if not df_jumbo.empty:
+        df_jumbo = (df_jumbo
+                    .groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
+                    .count()
+                    .reset_index())
+        df_jumbo = df_jumbo.groupby('plate_number_assigned')['shipment'].mean().reset_index()
+        fig3 = px.bar(df_jumbo, x='shipment', y='plate_number_assigned',
+                      title='Average Jumbo Shipments', orientation='h', template='plotly_white')
+        st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.info("No Jumbo shipment data available for the selected filters.")
