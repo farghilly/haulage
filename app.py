@@ -6,7 +6,7 @@ import plotly.express as px
 import json
 import calendar
 from datetime import datetime, timedelta
-from streamlit_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from streamlit-aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 
 # ------------------------------
