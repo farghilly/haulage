@@ -209,7 +209,7 @@ def attendance_tab():
     plate_numbers = filtered_assignments['vehicle_plate_number'].unique()
 
     # Select date range for the daily logs (default current month)
-\    selected_month = st.date_input("Select month")
+    selected_month = st.date_input("Select month")
 
     # Load existing attendance log for the selected month
     log_df = load_attendance_log(selected_month.strftime("%Y-%m"))
