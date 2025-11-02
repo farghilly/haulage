@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import psycopg2
 import plotly.express as px
+import json
 
 # ------------------------------
 # PAGE SETUP
@@ -148,7 +149,7 @@ filtered_df = df_rental[
 # ------------------------------
 # TABS
 # ------------------------------
-tab1, tab2 = st.tabs(["Fleet Utilization", "Average Jumbo Shipments"])
+tab1, tab2, tab3 = st.tabs(["Fleet Utilization", "Average Jumbo Shipments", "Rental Vehicles Log"])
 
 # ------------------------------
 # TAB 1: Dead Head & Total Distance
@@ -186,3 +187,147 @@ with tab2:
         st.plotly_chart(fig3, use_container_width=True)
     else:
         st.info("No Jumbo shipment data available for the selected filters.")
+
+
+# ------------------------------
+# TAB 3: Rental Vehicles Attendance
+# ------------------------------
+
+with tab3:
+    st.subheader("🕒 Rental Vehicles Daily Log")
+
+    # --- Fetch vehicle assignment data ---
+    df_assignments = pd.read_sql_query("""
+        SELECT vehicle_assignment.vehicle_plate_number,
+               transporter_info.transporter_name,
+               segment_info.description AS segment
+        FROM vehicle_assignment
+        LEFT JOIN transporter_info ON transporter_info.id = vehicle_assignment.transporter_id
+        LEFT JOIN segment_info ON segment_info.id = vehicle_assignment.segment_id
+        WHERE vehicle_assignment.period_start_date < CURRENT_DATE
+          AND vehicle_assignment.period_end_date > CURRENT_DATE
+    """, conn)
+
+    # --- Fetch driver data ---
+    df_drivers = pd.read_sql_query("""
+        SELECT id, driver_name FROM driver_info
+    """, conn)
+
+    # ------------------------------
+    # FILTERS
+    # ------------------------------
+    st.sidebar.markdown("---")
+    st.sidebar.header("Attendance Filters")
+
+    # Segment (single select)
+    segments_opt = df_assignments["segment"].dropna().unique()
+    selected_segment = st.sidebar.selectbox("Segment", options=segments_opt)
+
+    # Filter by segment
+    df_filtered_segment = df_assignments[df_assignments["segment"] == selected_segment]
+
+    # Transporter (multi-select)
+    transporters_opt = df_filtered_segment["transporter_name"].dropna().unique()
+    selected_transporters = st.sidebar.multiselect(
+        "Transporter", options=transporters_opt, default=transporters_opt
+    )
+
+    # Filter by transporter
+    df_filtered_transporter = df_filtered_segment[df_filtered_segment["transporter_name"].isin(selected_transporters)]
+
+    # Plate numbers (multi-select)
+    plates_opt = df_filtered_transporter["vehicle_plate_number"].unique()
+    selected_plates = st.sidebar.multiselect("Plate Number", options=plates_opt, default=plates_opt)
+
+    # Drivers (multi-select using names)
+    driver_name_to_id = dict(zip(df_drivers["driver_name"], df_drivers["id"]))
+    selected_drivers = st.sidebar.multiselect("Driver(s)", options=df_drivers["driver_name"].tolist())
+
+    # Date range
+    st.sidebar.markdown("---")
+    date_range = st.sidebar.date_input(
+        "Select Date Range",
+        [pd.Timestamp.today().replace(day=1), pd.Timestamp.today()]
+    )
+
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+        days = pd.date_range(start=start_date, end=end_date)
+    else:
+        st.warning("Please select a valid date range.")
+        st.stop()
+
+    # ------------------------------
+    # DAILY TABLE
+    # ------------------------------
+    if selected_plates and selected_drivers:
+        st.write(f"### Attendance for {selected_segment} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
+
+        # Create a dynamic input table for attendance
+        attendance_data = []
+        for plate in selected_plates:
+            row = {"Vehicle": plate}
+            for day in days:
+                key = f"{plate}_{day}"
+                row[str(day.date())] = st.selectbox(
+                    f"{plate} - {day.date()}",
+                    options=[1, 0.5, 0],
+                    index=0,
+                    key=key
+                )
+            attendance_data.append(row)
+
+        df_attendance = pd.DataFrame(attendance_data)
+        st.dataframe(df_attendance, use_container_width=True)
+
+        # ------------------------------
+        # SUBMIT BUTTON
+        # ------------------------------
+        if st.button("✅ Submit Attendance"):
+            cursor = conn.cursor()
+
+            for plate in selected_plates:
+                for driver_name in selected_drivers:
+                    driver_id = driver_name_to_id[driver_name]
+                    daily_log = {
+                        str(day.date()): float(df_attendance.loc[df_attendance["Vehicle"] == plate, str(day.date())].values[0])
+                        for day in days
+                    }
+                    total_days = sum(daily_log.values())
+                    month_start = pd.Timestamp(start_date).replace(day=1).date()
+
+                    cursor.execute("""
+                        INSERT INTO rental_vehicles_log (month, vehicle_plate_number, driver_id,
+                                                         total_working_days, daily_log, last_updated)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
+                        ON CONFLICT (month, vehicle_plate_number, driver_id)
+                        DO UPDATE SET
+                            total_working_days = EXCLUDED.total_working_days,
+                            daily_log = EXCLUDED.daily_log,
+                            last_updated = NOW();
+                    """, (month_start, plate, driver_id, total_days, json.dumps(daily_log)))
+
+            conn.commit()
+            st.success("✅ Attendance data submitted successfully!")
+
+    # ------------------------------
+    # HISTORY SECTION
+    # ------------------------------
+    st.markdown("---")
+    st.subheader("📜 Attendance History")
+
+    if selected_plates:
+        query = """
+            SELECT r.month, r.vehicle_plate_number, d.driver_name, r.total_working_days,
+                   r.daily_log, r.last_updated
+            FROM rental_vehicles_log r
+            LEFT JOIN driver_info d ON r.driver_id = d.id
+            WHERE r.vehicle_plate_number = ANY(%s)
+            ORDER BY r.last_updated DESC;
+        """
+        df_history = pd.read_sql(query, conn, params=(selected_plates,))
+        if not df_history.empty:
+            st.dataframe(df_history, use_container_width=True)
+        else:
+            st.info("No attendance history found for selected vehicles.")
+
