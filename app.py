@@ -5,7 +5,7 @@ import psycopg2
 import plotly.express as px
 import json
 import calendar
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 
 # ------------------------------
@@ -209,8 +209,11 @@ def attendance_tab():
     plate_numbers = filtered_assignments['vehicle_plate_number'].unique()
 
     # Select date range for the daily logs (default current month)
-    selected_month = st.date_input("Select month")
-
+    today = date.today()
+    first_day = today.replace(day=1)
+    last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    selected_month = st.date_input("Select month", value=first_day, min_value=first_day, max_value=last_day)
+    
     # Load existing attendance log for the selected month
     log_df = load_attendance_log(selected_month.strftime("%Y-%m"))
 
