@@ -216,15 +216,36 @@ with tab_log:
     if selected_plates:
         st.write(f"### Attendance for {selected_segment} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
 
-        # Base pivot table structure
+        month_start = pd.Timestamp(start_date).replace(day=1).date()
+
+        # 1. Query existing attendance data from DB
+        query_attendance = """
+            SELECT vehicle_plate_number, daily_log
+            FROM rental_vehicles_log
+            WHERE month = %s
+              AND vehicle_plate_number = ANY(%s)
+        """
+        df_attendance = pd.read_sql(query_attendance, conn, params=(month_start, selected_plates))
+
+        # 2. Prepare base DataFrame with zeros
         data = pd.DataFrame({
             "Vehicle": selected_plates,
             "Driver": [None] * len(selected_plates)
         })
 
-        # Add columns for each day
         for day in days:
             data[str(day.date())] = 0
+
+        # 3. Fill with existing daily_log data if available
+        for _, row in df_attendance.iterrows():
+            plate = row["vehicle_plate_number"]
+            daily_log = json.loads(row["daily_log"])
+            idx = data.index[data["Vehicle"] == plate]
+            if not idx.empty:
+                idx = idx[0]
+                for day_str, val in daily_log.items():
+                    if day_str in data.columns:
+                        data.at[idx, day_str] = val
 
         # Define column configuration for the editable table
         col_config = {
@@ -236,6 +257,7 @@ with tab_log:
                 help="Assign a driver to this vehicle (unique per table)."
             ),
         }
+
         # Add numeric columns for attendance days
         for day in days:
             col_config[str(day.date())] = st.column_config.SelectboxColumn(
