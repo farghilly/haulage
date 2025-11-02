@@ -149,10 +149,14 @@ filtered_df = df_rental[
 # ------------------------------
 # TABS
 # ------------------------------
-tab1, tab2, tab3 = st.tabs(["Fleet Utilization", "Average Jumbo Shipments", "Rental Vehicles Log"])
+tab1, tab2, tab3 = st.tabs([
+    "Fleet Utilization",
+    "Average Jumbo Shipments",
+    "Daily Log"
+])
 
 # ------------------------------
-# TAB 1: Dead Head & Total Distance
+# TAB 1: Fleet Utilization
 # ------------------------------
 with tab1:
     st.subheader("📊 Dead Head Distance Over Time")
@@ -190,11 +194,13 @@ with tab2:
 
 
 # ------------------------------
-# TAB 3: Rental Vehicles Attendance
+# TAB 3: Daily Log (Pivot Style Attendance)
 # ------------------------------
-
 with tab3:
-    st.subheader("🕒 Rental Vehicles Daily Log")
+    st.subheader("🕒 Daily Attendance Log")
+
+    # Hide sidebar filters visually for this tab
+    st.sidebar.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
     # --- Fetch vehicle assignment data ---
     df_assignments = pd.read_sql_query("""
@@ -212,40 +218,38 @@ with tab3:
     df_drivers = pd.read_sql_query("""
         SELECT id, driver_name FROM driver_info
     """, conn)
+    driver_map = dict(zip(df_drivers['driver_name'], df_drivers['id']))
 
-    # ------------------------------
-    # FILTERS
-    # ------------------------------
-    st.sidebar.markdown("---")
-    st.sidebar.header("Attendance Filters")
+    # --- Local Filters (inside tab) ---
+    col1, col2, col3, col4 = st.columns(4)
 
-    # Segment (single select)
-    segments_opt = df_assignments["segment"].dropna().unique()
-    selected_segment = st.sidebar.selectbox("Segment", options=segments_opt)
+    with col1:
+        selected_segment = st.selectbox(
+            "Segment", df_assignments["segment"].dropna().unique()
+        )
 
-    # Filter by segment
     df_filtered_segment = df_assignments[df_assignments["segment"] == selected_segment]
 
-    # Transporter (multi-select)
-    transporters_opt = df_filtered_segment["transporter_name"].dropna().unique()
-    selected_transporters = st.sidebar.multiselect(
-        "Transporter", options=transporters_opt, default=transporters_opt
-    )
+    with col2:
+        selected_transporters = st.multiselect(
+            "Transporter", df_filtered_segment["transporter_name"].dropna().unique()
+        )
 
-    # Filter by transporter
-    df_filtered_transporter = df_filtered_segment[df_filtered_segment["transporter_name"].isin(selected_transporters)]
+    df_filtered_transporter = df_filtered_segment[
+        df_filtered_segment["transporter_name"].isin(selected_transporters)
+    ]
 
-    # Plate numbers (multi-select)
-    plates_opt = df_filtered_transporter["vehicle_plate_number"].unique()
-    selected_plates = st.sidebar.multiselect("Plate Number", options=plates_opt, default=plates_opt)
+    with col3:
+        selected_plates = st.multiselect(
+            "Plate Number", df_filtered_transporter["vehicle_plate_number"].unique()
+        )
 
-    # Drivers (multi-select using names)
-    driver_name_to_id = dict(zip(df_drivers["driver_name"], df_drivers["id"]))
-    selected_drivers = st.sidebar.multiselect("Driver(s)", options=df_drivers["driver_name"].tolist())
+    with col4:
+        selected_drivers = st.multiselect(
+            "Driver(s)", df_drivers["driver_name"].tolist()
+        )
 
-    # Date range
-    st.sidebar.markdown("---")
-    date_range = st.sidebar.date_input(
+    date_range = st.date_input(
         "Select Date Range",
         [pd.Timestamp.today().replace(day=1), pd.Timestamp.today()]
     )
@@ -257,41 +261,26 @@ with tab3:
         st.warning("Please select a valid date range.")
         st.stop()
 
-    # ------------------------------
-    # DAILY TABLE
-    # ------------------------------
     if selected_plates and selected_drivers:
-        st.write(f"### Attendance for {selected_segment} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
+        # --- Create empty attendance pivot table ---
+        data = pd.DataFrame(0, index=selected_plates, columns=[str(d.date()) for d in days])
+        st.write("### Fill Attendance (1 / 0.5 / 0)")
+        edited_df = st.data_editor(
+            data,
+            use_container_width=True,
+            key="pivot_attendance",
+            num_rows="dynamic"
+        )
 
-        # Create a dynamic input table for attendance
-        attendance_data = []
-        for plate in selected_plates:
-            row = {"Vehicle": plate}
-            for day in days:
-                key = f"{plate}_{day}"
-                row[str(day.date())] = st.selectbox(
-                    f"{plate} - {day.date()}",
-                    options=[1, 0.5, 0],
-                    index=0,
-                    key=key
-                )
-            attendance_data.append(row)
-
-        df_attendance = pd.DataFrame(attendance_data)
-        st.dataframe(df_attendance, use_container_width=True)
-
-        # ------------------------------
-        # SUBMIT BUTTON
-        # ------------------------------
+        # --- Submit Button ---
         if st.button("✅ Submit Attendance"):
             cursor = conn.cursor()
 
             for plate in selected_plates:
                 for driver_name in selected_drivers:
-                    driver_id = driver_name_to_id[driver_name]
+                    driver_id = driver_map[driver_name]
                     daily_log = {
-                        str(day.date()): float(df_attendance.loc[df_attendance["Vehicle"] == plate, str(day.date())].values[0])
-                        for day in days
+                        str(day): float(edited_df.loc[plate, str(day)]) for day in edited_df.columns
                     }
                     total_days = sum(daily_log.values())
                     month_start = pd.Timestamp(start_date).replace(day=1).date()
@@ -310,13 +299,10 @@ with tab3:
             conn.commit()
             st.success("✅ Attendance data submitted successfully!")
 
-    # ------------------------------
-    # HISTORY SECTION
-    # ------------------------------
-    st.markdown("---")
-    st.subheader("📜 Attendance History")
+        # --- Attendance History ---
+        st.markdown("---")
+        st.subheader("📜 Attendance History")
 
-    if selected_plates:
         query = """
             SELECT r.month, r.vehicle_plate_number, d.driver_name, r.total_working_days,
                    r.daily_log, r.last_updated
@@ -330,4 +316,3 @@ with tab3:
             st.dataframe(df_history, use_container_width=True)
         else:
             st.info("No attendance history found for selected vehicles.")
-
