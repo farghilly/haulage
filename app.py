@@ -224,7 +224,8 @@ def attendance_tab():
 
     # Add columns for each day
     for i, day in enumerate(days_in_month):
-        base_df[day.strftime('%Y-%m-%d')] = base_df['daily_log'].apply(lambda x: x[i] if len(x) > i else 0)
+        base_df[day.strftime('%Y-%m-%d')] = base_df['daily_log'].apply(lambda x: x[i] if isinstance(x, list) and len(x) > i else 0)
+
 
     # Drop daily_log column (no longer needed)
     base_df.drop(columns=['daily_log'], inplace=True)
