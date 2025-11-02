@@ -215,7 +215,7 @@ def attendance_tab():
     selected_month = st.date_input("Select month", value=first_day, min_value=first_day, max_value=last_day)
     
     # Load existing attendance log for the selected month
-    log_df = load_attendance_log(selected_month.strftime("%Y-%m"))
+    log_df = load_attendance_log(selected_month.strftime("%Y-%m-01"))
 
     # Prepare daily columns: list of dates in the month
     days_in_month = pd.date_range(start=selected_month, end=last_day)
@@ -269,7 +269,7 @@ def attendance_tab():
 
         # Prepare row to save
         updated_rows.append({
-            'month': selected_month.strftime("%Y-%m"),
+            'month': selected_month.strftime("%Y-%m-01"),
             'vehicle_plate_number': vehicle,
             'driver_id': driver_id_map.get(driver_selected, None) if driver_selected != "-- Select Driver --" else None,
             'total_working_days': total_working_days,
