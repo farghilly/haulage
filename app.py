@@ -74,12 +74,14 @@ df_shipments, df_plate_numbers, df_distance = load_data()
 # ------------------------------
 # DATA PREPARATION
 # ------------------------------
-# Filter dedicated transporters
-df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
 
 # Merge with plate numbers
-df_rental = df_rental.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
-df_rental.drop(columns=['id', 'vehicle_id'], inplace=True)
+df_shipments = df_shipments.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
+df_shipments.drop(columns=['id', 'vehicle_id'], inplace=True)
+
+
+# Filter dedicated transporters
+df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
 
 # Add next shipping point per vehicle
 df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
@@ -106,36 +108,47 @@ df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_s
 st.sidebar.header("Filters")
 
 # Date filter
-min_date = df_rental['actual_shipment_start'].min()
-max_date = df_rental['actual_shipment_start'].max()
+min_date = df_shipments['actual_shipment_start'].min()
+max_date = df_shipments['actual_shipment_start'].max()
 selected_date = st.sidebar.date_input("Select date range", [min_date, max_date])
 
 # Segment filter
 segments = st.sidebar.multiselect(
-    "Segment", options=df_rental['segment'].dropna().unique(), default=df_rental['segment'].dropna().unique()
+    "Segment", options=df_shipments['segment'].dropna().unique(), default=df_shipments['segment'].dropna().unique()
 )
 
 # Transporter filter
 transporters = st.sidebar.multiselect(
-    "Transporter", options=df_rental['transporter_name'].dropna().unique(), default=df_rental['transporter_name'].dropna().unique()
+    "Transporter", options=df_shipments['transporter_name'].dropna().unique(), default=df_shipments['transporter_name'].dropna().unique()
 )
 
 # Shipping point filter
 shipping_points = st.sidebar.multiselect(
-    "Shipping Point", options=df_rental['shipping_point'].dropna().unique(), default=df_rental['shipping_point'].dropna().unique()
+    "Shipping Point", options=df_shipments['shipping_point'].dropna().unique(), default=df_shipments['shipping_point'].dropna().unique()
 )
 
 # Receiving point filter
 receiving_points = st.sidebar.multiselect(
-    "Receiving Point", options=df_rental['receiving_point'].dropna().unique(), default=df_rental['receiving_point'].dropna().unique()
+    "Receiving Point", options=df_shipments['receiving_point'].dropna().unique(), default=df_shipments['receiving_point'].dropna().unique()
 )
 
 # Transporter type filter
 transporter_types = st.sidebar.multiselect(
-    "Transporter Type", options=df_rental['transporter_type_description'].dropna().unique(), default=df_rental['transporter_type_description'].dropna().unique()
+    "Transporter Type", options=df_shipments['transporter_type_description'].dropna().unique(), default=df_shipments['transporter_type_description'].dropna().unique()
 )
 
 # Apply filters
+main_filtered_df = df_shipments[
+    (df_shipments['actual_shipment_start'].dt.date >= selected_date[0]) &
+    (df_shipments['actual_shipment_start'].dt.date <= selected_date[1]) &
+    (df_shipments['segment'].isin(segments)) &
+    (df_shipments['transporter_name'].isin(transporters)) &
+    (df_shipments['shipping_point'].isin(shipping_points)) &
+    (df_shipments['receiving_point'].isin(receiving_points)) &
+    (df_shipments['transporter_type_description'].isin(transporter_types))
+]
+
+
 filtered_df = df_rental[
     (df_rental['actual_shipment_start'].dt.date >= selected_date[0]) &
     (df_rental['actual_shipment_start'].dt.date <= selected_date[1]) &
@@ -343,17 +356,19 @@ with tab_log:
             st.info("No attendance history found for selected vehicles.")
 
 with tab_fleet:
-    st.subheader("📊 Dead Head Distance Over Time")
-    df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
-    fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
-                   title='Dead Head Distance Over Time', markers=True, template='plotly_white')
-    st.plotly_chart(fig1, use_container_width=True)
-
-    st.subheader("📈 Total Distance Travelled Over Time")
-    df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
-    fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
-                   title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-    st.plotly_chart(fig2, use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📊 Dead Head Distance Over Time")
+        df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
+        fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
+                       title='Dead Head Distance Over Time', markers=True, template='plotly_white')
+        st.plotly_chart(fig1, use_container_width=True)
+    with col2:
+        st.subheader("📈 Total Distance Travelled Over Time")
+        df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
+        fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
+                       title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
+        st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
 
