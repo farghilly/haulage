@@ -315,14 +315,14 @@ with tab_fleet:
         df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
         fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
                        title='Dead Head Distance Over Time', markers=True, template='plotly_white')
-        st.metric(label="Total Dead Head Distance", value=round(filtered_df['dead_head_distance'].sum(), 2))
+        st.metric(label="Total Dead Head Distance", value=round({filtered_df['dead_head_distance'].sum():,}))
         st.plotly_chart(fig1, use_container_width=True)
     with col2:
         st.subheader("📈 Total Distance Travelled Over Time")
         df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
         fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
                        title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-        st.metric(label="Total Distance Travelled", value=round(filtered_df['total_distance'].sum(), 2))
+        st.metric(label="Total Distance Travelled", value=round({filtered_df['total_distance'].sum():,}))
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
