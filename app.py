@@ -80,13 +80,9 @@ df_shipments.drop(columns=['id', 'vehicle_id'], inplace=True)
 df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
 
 df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
-df_rental = df_rental.merge(df_distance, on=['shipping_point', 'receiving_point'], how='left')
-df_rental[dead_head_distance] = df_rental.merge(
-        df_distance, 
-        left_on=['receiving_point', 'next_shipping_point'], 
-        right_on=['shipping_point', 'receiving_point'], 
-        how='left')['distance']
-df_rental['total_distance'] = df_rental['distance'].fillna(0) + df_rental['dead_head_distance']
+df_rental[headhaul_distance] = df_rental.merge(df_distance, on=['shipping_point', 'receiving_point'], how='left')['distance']
+df_rental[dead_head_distance] = df_rental.merge(df_distance, left_on=['receiving_point', 'next_shipping_point'], right_on=['shipping_point', 'receiving_point'], how='left')['distance']
+df_rental['total_distance'] = df_rental['headhaul_distance'].fillna(0) + df_rental['dead_head_distance']
 df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_start'])
 
 # ------------------------------
