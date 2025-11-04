@@ -337,11 +337,10 @@ with tab_fleet:
             .count()
             .reset_index()
         )
-        df_jumbo_average = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
-        average_jumbo = df_jumbo_average['shipment'].mean()
+        df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
+        average_jumbo = df_jumbo_avg['shipment'].mean()
         st.metric(label="Average Jumbo Shipments", value=round(average_jumbo, 2))
 
-        df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
         fig3 = px.bar(df_jumbo_avg, x='shipment', y='plate_number_assigned',
                       title='Average Jumbo Shipments Per Plate Number', orientation='h', template='plotly_white')
         st.plotly_chart(fig3, use_container_width=True)
