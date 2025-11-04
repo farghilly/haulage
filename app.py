@@ -337,7 +337,8 @@ with tab_fleet:
             .count()
             .reset_index()
         )
-        average_jumbo = df_jumbo_count['shipment'].mean()
+        df_jumbo_average = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
+        average_jumbo = df_jumbo_average['shipment'].mean()
         st.metric(label="Average Jumbo Shipments", value=round(average_jumbo, 2))
 
         df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
