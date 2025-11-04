@@ -81,11 +81,11 @@ df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedica
 
 df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
 df_rental = df_rental.merge(df_distance, on=['shipping_point', 'receiving_point'], how='left')
-df_rental['dead_head_distance'] = np.where(
-    df_rental['shipping_point'] == df_rental['receiving_point'],
-    0,
-    np.random.uniform(10, 300, len(df_rental))
-)
+df_rental[dead_head_distance] = df_rental.merge(
+        df_distance, 
+        left_on=['receiving_point', 'next_shipping_point'], 
+        right_on=['shipping_point', 'receiving_point'], 
+        how='left')['distance']
 df_rental['total_distance'] = df_rental['distance'].fillna(0) + df_rental['dead_head_distance']
 df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_start'])
 
@@ -316,7 +316,7 @@ with tab_fleet:
         fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
                        title='Dead Head Distance Over Time', markers=True, template='plotly_white')
         total_deadhead = round(filtered_df['dead_head_distance'].sum())
-        st.metric(label="Total Dead Head Distance", value={f"{total_deadhead:,.1f}M")
+        st.metric(label="Total Dead Head Distance", value= f"{total_deadhead:,.1f}M")
         st.plotly_chart(fig1, use_container_width=True)
     with col2:
         st.subheader("📈 Total Distance Travelled Over Time")
@@ -324,7 +324,7 @@ with tab_fleet:
         fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
                        title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
         total_distance = round({filtered_df['total_distance'].sum())
-        st.metric(label="Total Distance Travelled", value= {f"{total_distance:,.1f}M,")
+        st.metric(label="Total Distance Travelled", value= f"{total_distance:,.1f}M,")
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
