@@ -323,7 +323,7 @@ with tab_fleet:
         df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
         fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
                        title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-        total_distance = round({filtered_df['total_distance'].sum())
+        total_distance = round(filtered_df['total_distance'].sum())
         st.metric(label="Total Distance Travelled", value= f"{total_distance:,.1f}M,")
         st.plotly_chart(fig2, use_container_width=True)
 
