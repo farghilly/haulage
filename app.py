@@ -377,6 +377,8 @@ with tab_fleet:
         (filtered_df['segment'] == 'Qalyub') &
         (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and','Alwefaq national  transport']))
     ]
+    average_jumbo = df_jumbo['shipment'].mean()
+    st.metric(label= "Average Jumbo Shipments", value= average_jumbo)
     if not df_jumbo.empty:
         df_jumbo = (df_jumbo
                     .groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
@@ -384,7 +386,7 @@ with tab_fleet:
                     .reset_index())
         df_jumbo = df_jumbo.groupby('plate_number_assigned')['shipment'].mean().reset_index()
         fig3 = px.bar(df_jumbo, x='shipment', y='plate_number_assigned',
-                      title='Average Jumbo Shipments', orientation='h', template='plotly_white')
+                      title='Average Jumbo Shipments Per Plate Number', orientation='h', template='plotly_white')
         st.plotly_chart(fig3, use_container_width=True)
     else:
         st.info("No Jumbo shipment data available for the selected filters.")
