@@ -69,37 +69,24 @@ def load_data():
 
     return df_shipments, df_plate_numbers, df_distance
 
+
 df_shipments, df_plate_numbers, df_distance = load_data()
 
 # ------------------------------
 # DATA PREPARATION
 # ------------------------------
-
-# Merge with plate numbers
 df_shipments = df_shipments.merge(df_plate_numbers, left_on='vehicle_id', right_on='id', how='left')
 df_shipments.drop(columns=['id', 'vehicle_id'], inplace=True)
-
-
-# Filter dedicated transporters
 df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedicated']
 
-# Add next shipping point per vehicle
 df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
-
-# Merge with distance data
 df_rental = df_rental.merge(df_distance, on=['shipping_point', 'receiving_point'], how='left')
-
-# Compute dead head distance placeholder (simplified for app demo)
 df_rental['dead_head_distance'] = np.where(
     df_rental['shipping_point'] == df_rental['receiving_point'],
     0,
-    np.random.uniform(10, 300, len(df_rental))  # Simulated where missing
+    np.random.uniform(10, 300, len(df_rental))
 )
-
-# Compute total distance
 df_rental['total_distance'] = df_rental['distance'].fillna(0) + df_rental['dead_head_distance']
-
-# Convert date column
 df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_start'])
 
 # ------------------------------
@@ -107,40 +94,40 @@ df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_s
 # ------------------------------
 st.sidebar.header("Filters")
 
-# Date filter
-min_date = df_shipments['actual_shipment_start'].min()
-max_date = df_shipments['actual_shipment_start'].max()
+min_date = df_shipments['actual_shipment_start'].min().date()
+max_date = df_shipments['actual_shipment_start'].max().date()
 selected_date = st.sidebar.date_input("Select date range", [min_date, max_date])
 
-# Segment filter
+# Guard for single-date selection
+if isinstance(selected_date, (tuple, list)) and len(selected_date) == 2:
+    start_date, end_date = selected_date
+else:
+    start_date = end_date = selected_date
+
 segments = st.sidebar.multiselect(
-    "Segment", options=df_shipments['segment'].dropna().unique(), default=df_shipments['segment'].dropna().unique()
+    "Segment", options=df_shipments['segment'].dropna().unique(),
+    default=df_shipments['segment'].dropna().unique()
 )
-
-# Transporter filter
 transporters = st.sidebar.multiselect(
-    "Transporter", options=df_shipments['transporter_name'].dropna().unique(), default=df_shipments['transporter_name'].dropna().unique()
+    "Transporter", options=df_shipments['transporter_name'].dropna().unique(),
+    default=df_shipments['transporter_name'].dropna().unique()
 )
-
-# Shipping point filter
 shipping_points = st.sidebar.multiselect(
-    "Shipping Point", options=df_shipments['shipping_point'].dropna().unique(), default=df_shipments['shipping_point'].dropna().unique()
+    "Shipping Point", options=df_shipments['shipping_point'].dropna().unique(),
+    default=df_shipments['shipping_point'].dropna().unique()
 )
-
-# Receiving point filter
 receiving_points = st.sidebar.multiselect(
-    "Receiving Point", options=df_shipments['receiving_point'].dropna().unique(), default=df_shipments['receiving_point'].dropna().unique()
+    "Receiving Point", options=df_shipments['receiving_point'].dropna().unique(),
+    default=df_shipments['receiving_point'].dropna().unique()
 )
-
-# Transporter type filter
 transporter_types = st.sidebar.multiselect(
-    "Transporter Type", options=df_shipments['transporter_type_description'].dropna().unique(), default=df_shipments['transporter_type_description'].dropna().unique()
+    "Transporter Type", options=df_shipments['transporter_type_description'].dropna().unique(),
+    default=df_shipments['transporter_type_description'].dropna().unique()
 )
 
-# Apply filters
 main_filtered_df = df_shipments[
-    (df_shipments['actual_shipment_start'].dt.date >= selected_date[0]) &
-    (df_shipments['actual_shipment_start'].dt.date <= selected_date[1]) &
+    (df_shipments['actual_shipment_start'].dt.date >= start_date) &
+    (df_shipments['actual_shipment_start'].dt.date <= end_date) &
     (df_shipments['segment'].isin(segments)) &
     (df_shipments['transporter_name'].isin(transporters)) &
     (df_shipments['shipping_point'].isin(shipping_points)) &
@@ -148,10 +135,9 @@ main_filtered_df = df_shipments[
     (df_shipments['transporter_type_description'].isin(transporter_types))
 ]
 
-
 filtered_df = df_rental[
-    (df_rental['actual_shipment_start'].dt.date >= selected_date[0]) &
-    (df_rental['actual_shipment_start'].dt.date <= selected_date[1]) &
+    (df_rental['actual_shipment_start'].dt.date >= start_date) &
+    (df_rental['actual_shipment_start'].dt.date <= end_date) &
     (df_rental['segment'].isin(segments)) &
     (df_rental['transporter_name'].isin(transporters)) &
     (df_rental['shipping_point'].isin(shipping_points)) &
@@ -164,10 +150,12 @@ filtered_df = df_rental[
 # ------------------------------
 tab_log, tab_fleet = st.tabs(["Daily Log", "Fleet Utilization"])
 
+# ------------------------------
+# TAB 1: DAILY LOG
+# ------------------------------
 with tab_log:
     st.subheader("🕒 Daily Attendance Log")
 
-    # --- Fetch vehicle assignments ---
     df_assignments = pd.read_sql_query("""
         SELECT vehicle_assignment.vehicle_plate_number,
                transporter_info.transporter_name,
@@ -179,29 +167,18 @@ with tab_log:
           AND vehicle_assignment.period_end_date > CURRENT_DATE
     """, conn)
 
-    # --- Fetch driver data ---
-    df_drivers = pd.read_sql_query("""
-        SELECT id, driver_name FROM driver_info
-    """, conn)
+    df_drivers = pd.read_sql_query("SELECT id, driver_name FROM driver_info", conn)
     driver_map = dict(zip(df_drivers["driver_name"], df_drivers["id"]))
 
-    # ------------------------------
-    # FILTERS (Segment / Transporter / Plate / Date)
-    # ------------------------------
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        selected_segment = st.selectbox(
-            "Segment", df_assignments["segment"].dropna().unique()
-        )
-
+        selected_segment = st.selectbox("Segment", df_assignments["segment"].dropna().unique())
     df_filtered_segment = df_assignments[df_assignments["segment"] == selected_segment]
 
     with col2:
         selected_transporters = st.multiselect(
             "Transporter", df_filtered_segment["transporter_name"].dropna().unique()
         )
-
     df_filtered_transporter = df_filtered_segment[
         df_filtered_segment["transporter_name"].isin(selected_transporters)
     ]
@@ -223,15 +200,10 @@ with tab_log:
         st.warning("Please select a valid date range.")
         st.stop()
 
-    # ------------------------------
-    # PIVOT TABLE (Editable)
-    # ------------------------------
     if selected_plates:
         st.write(f"### Attendance for {selected_segment} ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b')})")
 
         month_start = pd.Timestamp(start_date).replace(day=1).date()
-
-        # 1. Query existing attendance data from DB
         query_attendance = """
             SELECT vehicle_plate_number, daily_log
             FROM rental_vehicles_log
@@ -240,21 +212,17 @@ with tab_log:
         """
         df_attendance = pd.read_sql(query_attendance, conn, params=(month_start, selected_plates))
 
-        # 2. Prepare base DataFrame with zeros
-        data = pd.DataFrame({
-            "Vehicle": selected_plates,
-            "Driver": [None] * len(selected_plates)
-        })
-
+        data = pd.DataFrame({"Vehicle": selected_plates, "Driver": [None] * len(selected_plates)})
         for day in days:
             data[str(day.date())] = 0
 
-        # 3. Fill with existing daily_log data if available
         for _, row in df_attendance.iterrows():
             plate = row["vehicle_plate_number"]
             daily_log = row["daily_log"]
             if isinstance(daily_log, str):
                 daily_log = json.loads(daily_log)
+            elif daily_log is None:
+                daily_log = {}
             idx = data.index[data["Vehicle"] == plate]
             if not idx.empty:
                 idx = idx[0]
@@ -262,7 +230,6 @@ with tab_log:
                     if day_str in data.columns:
                         data.at[idx, day_str] = val
 
-        # Define column configuration for the editable table
         col_config = {
             "Vehicle": st.column_config.Column(disabled=True),
             "Driver": st.column_config.SelectboxColumn(
@@ -273,7 +240,6 @@ with tab_log:
             ),
         }
 
-        # Add numeric columns for attendance days
         for day in days:
             col_config[str(day.date())] = st.column_config.SelectboxColumn(
                 label=str(day.date()),
@@ -282,7 +248,6 @@ with tab_log:
                 default=0,
             )
 
-        # Editable table
         edited_df = st.data_editor(
             data,
             use_container_width=True,
@@ -291,36 +256,26 @@ with tab_log:
             num_rows="fixed"
         )
 
-        # Validate unique driver assignment
         if edited_df["Driver"].duplicated().any():
-            st.error("❌ Each driver can only be assigned to one vehicle in this table.")
+            st.error("❌ Each driver can only be assigned to one vehicle.")
             st.stop()
 
-        # ------------------------------
-        # SUBMIT BUTTON
-        # ------------------------------
         if st.button("✅ Submit Attendance"):
             cursor = conn.cursor()
-
             for _, row in edited_df.iterrows():
                 plate = row["Vehicle"]
                 driver_name = row["Driver"]
-
                 if not driver_name:
                     continue
-
                 driver_id = driver_map.get(driver_name)
                 if not driver_id:
                     st.warning(f"Driver '{driver_name}' not found in database.")
                     continue
-
-                # Prepare daily log JSON
                 daily_log = {
                     col: float(row[col]) for col in edited_df.columns if col not in ["Vehicle", "Driver"]
                 }
                 total_days = sum(daily_log.values())
                 month_start = pd.Timestamp(start_date).replace(day=1).date()
-
                 cursor.execute("""
                     INSERT INTO rental_vehicles_log (month, vehicle_plate_number, driver_id,
                                                      total_working_days, daily_log, last_updated)
@@ -331,16 +286,11 @@ with tab_log:
                         daily_log = EXCLUDED.daily_log,
                         last_updated = NOW();
                 """, (month_start, plate, driver_id, total_days, json.dumps(daily_log)))
-
             conn.commit()
             st.success("✅ Attendance data submitted successfully!")
 
-        # ------------------------------
-        # HISTORY
-        # ------------------------------
         st.markdown("---")
         st.subheader("📜 Attendance History")
-
         query = """
             SELECT r.month, r.vehicle_plate_number, d.driver_name,
                    r.total_working_days, r.daily_log, r.last_updated
@@ -355,6 +305,9 @@ with tab_log:
         else:
             st.info("No attendance history found for selected vehicles.")
 
+# ------------------------------
+# TAB 2: FLEET UTILIZATION
+# ------------------------------
 with tab_fleet:
     col1, col2 = st.columns(2)
     with col1:
@@ -371,21 +324,24 @@ with tab_fleet:
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
-
     st.subheader("🚚 Average Jumbo Shipments")
+
     df_jumbo = filtered_df[
         (filtered_df['segment'] == 'Qalyub') &
-        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and','Alwefaq national  transport']))
+        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and', 'Alwefaq national  transport']))
     ]
-    average_jumbo = df_jumbo['shipment'].mean()
-    st.metric(label= "Average Jumbo Shipments", value= average_jumbo)
+
     if not df_jumbo.empty:
-        df_jumbo = (df_jumbo
-                    .groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
-                    .count()
-                    .reset_index())
-        df_jumbo = df_jumbo.groupby('plate_number_assigned')['shipment'].mean().reset_index()
-        fig3 = px.bar(df_jumbo, x='shipment', y='plate_number_assigned',
+        df_jumbo_count = (
+            df_jumbo.groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
+            .count()
+            .reset_index()
+        )
+        average_jumbo = df_jumbo_count['shipment'].mean()
+        st.metric(label="Average Jumbo Shipments", value=round(average_jumbo, 2))
+
+        df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
+        fig3 = px.bar(df_jumbo_avg, x='shipment', y='plate_number_assigned',
                       title='Average Jumbo Shipments Per Plate Number', orientation='h', template='plotly_white')
         st.plotly_chart(fig3, use_container_width=True)
     else:
