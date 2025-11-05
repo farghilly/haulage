@@ -82,7 +82,7 @@ df_rental = df_shipments[df_shipments['transporter_type_description'] == 'dedica
 df_rental['next_shipping_point'] = df_rental.groupby('plate_number_assigned')['shipping_point'].shift(-1)
 df_rental["headhaul_distance"] = df_rental.merge(df_distance, on=['shipping_point', 'receiving_point'], how='left')['distance']
 df_rental["dead_head_distance"] = df_rental.merge(df_distance, left_on=['receiving_point', 'next_shipping_point'], right_on=['shipping_point', 'receiving_point'], how='left')['distance']
-df_rental['total_distance'] = df_rental['headhaul_distance'].fillna(0) + df_rental['dead_head_distance']
+df_rental['total_distance'] = df_rental['headhaul_distance'].fillna(0) + df_rental['dead_head_distance'].fillna(0)
 df_rental['actual_shipment_start'] = pd.to_datetime(df_rental['actual_shipment_start'])
 
 # ------------------------------
@@ -308,7 +308,7 @@ with tab_fleet:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("📊 Dead Head Distance Over Time")
-        df_dead_head_distance = filtered_df.groupby('actual_shipment_start')['dead_head_distance'].sum().reset_index()
+        df_dead_head_distance = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['dead_head_distance'].sum().reset_index()
         fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
                        title='Dead Head Distance Over Time', markers=True, template='plotly_white')
         total_deadhead = round(filtered_df['dead_head_distance'].sum())
@@ -316,11 +316,11 @@ with tab_fleet:
         st.plotly_chart(fig1, use_container_width=True)
     with col2:
         st.subheader("📈 Total Distance Travelled Over Time")
-        df_distance_travelled = filtered_df.groupby('actual_shipment_start')['total_distance'].sum().reset_index()
+        df_distance_travelled = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['total_distance'].sum().reset_index()
         fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
                        title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-        total_distance = round(filtered_df['total_distance'].sum())
-        st.metric(label="Total Distance Travelled", value= f"{total_distance:,.0f}")
+        total_distance_value = round(filtered_df['total_distance'].sum())
+        st.metric(label="Total Distance Travelled", value= f"{total_distance_value:,.0f}")
         st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
