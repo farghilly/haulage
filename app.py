@@ -305,44 +305,44 @@ with tab_log:
 # TAB 2: FLEET UTILIZATION
 # ------------------------------
 with tab_fleet:
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📊 Dead Head Distance Over Time")
-        df_dead_head_distance = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['dead_head_distance'].sum().reset_index()
-        fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
-                       title='Dead Head Distance Over Time', markers=True, template='plotly_white')
-        total_deadhead = round(filtered_df['dead_head_distance'].sum())
-        st.metric(label="Total Dead Head Distance", value= f"{total_deadhead:,.0f}")
-        st.plotly_chart(fig1, use_container_width=True)
-    with col2:
-        st.subheader("📈 Total Distance Travelled Over Time")
-        df_distance_travelled = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['total_distance'].sum().reset_index()
-        fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
-                       title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
-        total_distance_value = round(filtered_df['total_distance'].sum())
-        st.metric(label="Total Distance Travelled", value= f"{total_distance_value:,.0f}")
-        st.plotly_chart(fig2, use_container_width=True)
+    # col1, col2 = st.columns(2)
+#     with col1:
+#         st.subheader("📊 Dead Head Distance Over Time")
+#         df_dead_head_distance = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['dead_head_distance'].sum().reset_index()
+#         fig1 = px.line(df_dead_head_distance, x='actual_shipment_start', y='dead_head_distance',
+#                        title='Dead Head Distance Over Time', markers=True, template='plotly_white')
+#         total_deadhead = round(filtered_df['dead_head_distance'].sum())
+#         st.metric(label="Total Dead Head Distance", value= f"{total_deadhead:,.0f}")
+#         st.plotly_chart(fig1, use_container_width=True)
+#     with col2:
+#         st.subheader("📈 Total Distance Travelled Over Time")
+#         df_distance_travelled = filtered_df.groupby(filtered_df['actual_shipment_date'].dt.date.rename('actual_shipment_date'))['total_distance'].sum().reset_index()
+#         fig2 = px.line(df_distance_travelled, x='actual_shipment_start', y='total_distance',
+#                        title='Total Distance Travelled Over Time', markers=True, template='plotly_white')
+#         total_distance_value = round(filtered_df['total_distance'].sum())
+#         st.metric(label="Total Distance Travelled", value= f"{total_distance_value:,.0f}")
+#         st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown("---")
-    st.subheader("🚚 Average Jumbo Shipments")
+#     st.markdown("---")
+#     st.subheader("🚚 Average Jumbo Shipments")
 
-    df_jumbo = filtered_df[
-        (filtered_df['segment'] == 'Qalyub') &
-        (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and', 'Alwefaq national  transport']))
-    ]
+#     df_jumbo = filtered_df[
+#         (filtered_df['segment'] == 'Qalyub') &
+#         (filtered_df['transporter_name'].isin(['Al -Rehab Office for Transport and', 'Alwefaq national  transport']))
+#     ]
 
-    if not df_jumbo.empty:
-        df_jumbo_count = (
-            df_jumbo.groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
-            .count()
-            .reset_index()
-        )
-        df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
-        average_jumbo = df_jumbo_avg['shipment'].mean()
-        st.metric(label="Average Jumbo Shipments", value=round(average_jumbo, 2))
+#     if not df_jumbo.empty:
+#         df_jumbo_count = (
+#             df_jumbo.groupby(['plate_number_assigned', 'actual_shipment_start'])['shipment']
+#             .count()
+#             .reset_index()
+#         )
+#         df_jumbo_avg = df_jumbo_count.groupby('plate_number_assigned')['shipment'].mean().reset_index()
+#         average_jumbo = df_jumbo_avg['shipment'].mean()
+#         st.metric(label="Average Jumbo Shipments", value=round(average_jumbo, 2))
 
-        fig3 = px.bar(df_jumbo_avg, x='shipment', y='plate_number_assigned',
-                      title='Average Jumbo Shipments Per Plate Number', orientation='h', template='plotly_white')
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("No Jumbo shipment data available for the selected filters.")
+#         fig3 = px.bar(df_jumbo_avg, x='shipment', y='plate_number_assigned',
+#                       title='Average Jumbo Shipments Per Plate Number', orientation='h', template='plotly_white')
+#         st.plotly_chart(fig3, use_container_width=True)
+#     else:
+#         st.info("No Jumbo shipment data available for the selected filters.")
