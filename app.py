@@ -72,6 +72,20 @@ def load_data():
 
     return df_shipments, df_plate_numbers, df_distance
 
+def get_latest_driver_for_plates(plates):
+    query = """
+        SELECT DISTINCT ON (vehicle_plate_number)
+            vehicle_plate_number,
+            d.driver_name
+        FROM rental_vehicles_log r
+        LEFT JOIN driver_info d ON r.driver_id = d.id
+        WHERE vehicle_plate_number = ANY(%s)
+        ORDER BY vehicle_plate_number, r.last_updated DESC;
+    """
+    df = pd.read_sql(query, conn, params=(plates,))
+    return dict(zip(df["vehicle_plate_number"], df["driver_name"]))
+
+
 df_shipments, df_plate_numbers, df_distance = load_data()
 
 # ------------------------------
@@ -222,8 +236,14 @@ with tab_log:
         """
         df_attendance = pd.read_sql(query_attendance, conn, params=(month_start, selected_plates))
 
-        # build base pivot-like DataFrame (vehicles x days)
-        data = pd.DataFrame({"Vehicle": list(selected_plates), "Driver": [None] * len(selected_plates)})
+        # ✅ Fetch last assigned driver for each plate
+        latest_drivers = get_latest_driver_for_plates(selected_plates)
+        
+        # ✅ Create initial table with default driver from DB history
+        data = pd.DataFrame({
+            "Vehicle": list(selected_plates),
+            "Driver": [latest_drivers.get(plate, None) for plate in selected_plates]
+        })
 
         for day in days:
             data[str(day.date())] = 0
