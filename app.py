@@ -322,14 +322,15 @@ with tab_log:
 
                         # upsert: conflict on (month, vehicle_plate_number)
                         cursor.execute("""
-                            INSERT INTO rental_vehicles_log (month, vehicle_plate_number, driver_id, total_working_days, daily_log, last_updated)
-                            VALUES (%s, %s, %s, %s, %s::jsonb, NOW())
-                            ON CONFLICT (month, vehicle_plate_number)
+                            INSERT INTO rental_vehicles_log
+                            (month, vehicle_plate_number, driver_id, total_working_days, daily_log)
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON CONFLICT (month, vehicle_plate_number, driver_id)
                             DO UPDATE SET
-                                driver_id = EXCLUDED.driver_id,
                                 total_working_days = EXCLUDED.total_working_days,
                                 daily_log = EXCLUDED.daily_log,
                                 last_updated = NOW();
+
                         """, (month_start, plate, driver_id, total_working, json.dumps(daily_log_dict)))
                     conn.commit()
                     st.success("✅ Attendance data submitted successfully!")
